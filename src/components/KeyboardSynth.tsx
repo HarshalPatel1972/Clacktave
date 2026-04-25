@@ -57,6 +57,7 @@ export default function KeyboardSynth() {
   const keystrokes = useRef<number[]>([]);
   const intensity = useRef(0);
   const chordStep = useRef(0);
+  const activeKeys = useRef(new Set<string>());
   
   // YouTube Logic
   const [showSearch, setShowSearch] = useState(false);
@@ -169,17 +170,6 @@ export default function KeyboardSynth() {
 
     ctx.restore();
     intensity.current *= 0.992;
-
-    // YouTube Momentum Logic
-    if (ytPlayer.current && ytPlayer.current.getPlayerState) {
-        if (intensity.current > 0.05) {
-            if (ytPlayer.current.getPlayerState() !== 1) ytPlayer.current.playVideo();
-            ytPlayer.current.setVolume(Math.min(100, intensity.current * 200));
-        } else {
-            if (ytPlayer.current.getPlayerState() === 1) ytPlayer.current.pauseVideo();
-        }
-    }
-
     requestRef.current = requestAnimationFrame(animate);
   };
 
@@ -202,14 +192,30 @@ export default function KeyboardSynth() {
     };
 
     const handleResize = () => { if (canvasRef.current) { canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; } };
+    const updatePlayback = () => {
+        if (!ytPlayer.current || !ytPlayer.current.playVideo) return;
+        if (activeKeys.current.size > 0) {
+            ytPlayer.current.playVideo();
+            ytPlayer.current.setVolume(100);
+        } else {
+            ytPlayer.current.pauseVideo();
+            ytPlayer.current.setVolume(0);
+        }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (showSearch) return; // Allow typing in search bar
+      if (showSearch) return;
       if (e.key === '/') {
           e.preventDefault();
           setShowSearch(true);
           return;
       }
-      e.preventDefault(); if (e.repeat) return;
+      e.preventDefault();
+      
+      activeKeys.current.add(e.code);
+      updatePlayback();
+
+      if (e.repeat) return;
       const now = Date.now(); keystrokes.current.push(now);
       keystrokes.current = keystrokes.current.filter(t => now - t < 4000);
       intensity.current = Math.min(1.0, intensity.current + 0.08 + (keystrokes.current.length / 40));
@@ -218,6 +224,11 @@ export default function KeyboardSynth() {
         playChord(charCode);
         spawnVisuals(e.key.toUpperCase(), charCode);
       }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+        activeKeys.current.delete(e.code);
+        updatePlayback();
     };
     const handleMouseMove = (e: MouseEvent) => {
       mousePos.current = { x: e.clientX, y: e.clientY };
@@ -234,6 +245,7 @@ export default function KeyboardSynth() {
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousemove', handleMouseMove);
     handleResize();
     requestRef.current = requestAnimationFrame(animate);
@@ -241,6 +253,7 @@ export default function KeyboardSynth() {
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousemove', handleMouseMove);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
