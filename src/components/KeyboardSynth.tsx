@@ -179,6 +179,7 @@ export default function KeyboardSynth() {
     <canvas
       ref={canvasRef}
       className="fixed inset-0 w-full h-full bg-black touch-none"
+      style={{ cursor: 'auto' }}
       id="clacktave-canvas"
     />
   );

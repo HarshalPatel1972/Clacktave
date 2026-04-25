@@ -11,10 +11,12 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
+  cursor: auto !important;
 }
 
 canvas {
   display: block;
+  cursor: auto !important;
 }
 
 /* Ensure no scrollbars */
