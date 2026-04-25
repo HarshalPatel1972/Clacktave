@@ -68,7 +68,6 @@ export default function KeyboardSynth() {
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [lyricSource, setLyricSource] = useState<string>('');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const ytPlayer = useRef<any>(null);
 
   const initAudio = () => {
@@ -136,49 +135,76 @@ export default function KeyboardSynth() {
     gridWarp.current *= 0.94;
   };
 
-  const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      if (!showLyrics || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
-      
-      if (lyrics.length === 0) {
-          if (!lyricsLoading && activeTrack) {
-              ctx.save();
-              ctx.font = 'bold 24px Inter, sans-serif';
-              ctx.textAlign = 'center';
-              ctx.fillStyle = 'rgba(255,255,255,0.2)';
-              ctx.fillText("LYRICS UNAVAILABLE FOR THIS TRACK", width / 2, height / 2);
-              ctx.restore();
+  const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = words[0];
+
+      for (let i = 1; i < words.length; i++) {
+          const word = words[i];
+          const width = ctx.measureText(currentLine + " " + word).width;
+          if (width < maxWidth) {
+              currentLine += " " + word;
+          } else {
+              lines.push(currentLine);
+              currentLine = word;
           }
-          return;
+      }
+      lines.push(currentLine);
+      return lines;
+  };
+
+  const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+      if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
+      
+      const currentTime = ytPlayer.current.getCurrentTime();
+      let activeLyrics = lyrics;
+
+      // RE-SYNC LOGIC FOR FALLBACK SOURCES
+      if (lyricSource !== 'YOUTUBE_SYNC') {
+          const duration = ytPlayer.current.getDuration() || 210;
+          activeLyrics = lyrics.map((l, i) => ({
+              ...l,
+              start: (duration / lyrics.length) * i,
+              dur: (duration / lyrics.length) * 0.8
+          }));
       }
 
-      const currentTime = ytPlayer.current.getCurrentTime();
-      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
+      const currentLineIndex = activeLyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
 
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       if (currentLineIndex === -1) {
-          const nextIndex = lyrics.findIndex(line => line.start > currentTime);
+          const nextIndex = activeLyrics.findIndex(line => line.start > currentTime);
           if (nextIndex !== -1) {
-              ctx.font = 'italic 24px Inter, sans-serif';
-              ctx.fillStyle = 'white';
-              ctx.globalAlpha = 0.1 + intensity.current * 0.2;
-              ctx.fillText("READY: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
+              ctx.font = 'italic 20px Inter, sans-serif'; ctx.fillStyle = 'white'; ctx.globalAlpha = 0.1;
+              ctx.fillText("READY: " + activeLyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
           }
       } else {
-          const text = lyrics[currentLineIndex].text.toUpperCase();
+          const text = activeLyrics[currentLineIndex].text.toUpperCase();
           const opacity = 0.7 + intensity.current * 0.3;
-          ctx.font = 'bold 72px Inter, sans-serif';
-          ctx.letterSpacing = '10px';
-          if (intensity.current > 0.4) {
-              ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#ff0055'; ctx.fillText(text, width / 2 - 6, height / 2);
-              ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#00f2ff'; ctx.fillText(text, width / 2 + 6, height / 2);
-          }
-          ctx.globalAlpha = opacity; ctx.fillStyle = 'white'; ctx.fillText(text, width / 2, height / 2);
-          ctx.font = '32px Inter, sans-serif'; ctx.globalAlpha = 0.1;
-          if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 120);
-          if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 120);
+          const maxWidth = width * 0.8;
+          
+          // Adaptive font size based on length
+          const baseSize = text.length > 40 ? 48 : 64;
+          ctx.font = `bold ${baseSize}px Inter, sans-serif`;
+          ctx.letterSpacing = '8px';
+
+          const wrappedLines = wrapText(ctx, text, maxWidth);
+          const lineHeight = baseSize * 1.2;
+          const totalTextHeight = wrappedLines.length * lineHeight;
+          const startY = height / 2 - (totalTextHeight / 2) + (lineHeight / 2);
+
+          wrappedLines.forEach((line, i) => {
+              const y = startY + (i * lineHeight);
+              if (intensity.current > 0.4) {
+                  ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#ff0055'; ctx.fillText(line, width / 2 - 6, y);
+                  ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#00f2ff'; ctx.fillText(line, width / 2 + 6, y);
+              }
+              ctx.globalAlpha = opacity; ctx.fillStyle = 'white'; ctx.fillText(line, width / 2, y);
+          });
       }
       ctx.restore();
   };
@@ -257,7 +283,7 @@ export default function KeyboardSynth() {
 
   const handleSearch = async (e: React.FormEvent) => {
       e.preventDefault(); if (!searchQuery.trim()) return;
-      setIsSearching(true); setCountdown(10); setErrorMsg(null);
+      setIsSearching(true); setCountdown(10);
       try {
           const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
           const data = await res.json();
@@ -273,7 +299,7 @@ export default function KeyboardSynth() {
               setLyricSource(lyrData.source || 'NOT_FOUND');
               setLyricsLoading(false);
           }
-      } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); setErrorMsg("NETWORK ERROR"); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
+      } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
   };
 
   return (
