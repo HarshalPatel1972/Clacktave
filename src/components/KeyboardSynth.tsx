@@ -108,6 +108,9 @@ export default function KeyboardSynth() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent all default browser behaviors (scrolling, shortcuts, etc.)
+      e.preventDefault();
+
       if (e.repeat) return;
       
       const charCode = e.key.toUpperCase().charCodeAt(0);
