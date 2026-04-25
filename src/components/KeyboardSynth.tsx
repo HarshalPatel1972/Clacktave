@@ -61,6 +61,7 @@ export default function KeyboardSynth() {
   // YouTube Logic
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const ytPlayer = useRef<any>(null);
   const isYTServing = useRef(false);
 
@@ -245,18 +246,26 @@ export default function KeyboardSynth() {
     };
   }, [showSearch]);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
       e.preventDefault();
-      let videoId = searchQuery;
-      if (searchQuery.includes('v=')) videoId = searchQuery.split('v=')[1].split('&')[0];
-      else if (searchQuery.includes('youtu.be/')) videoId = searchQuery.split('youtu.be/')[1].split('?')[0];
-      
-      if (ytPlayer.current) {
-          ytPlayer.current.loadVideoById(videoId);
-          ytPlayer.current.pauseVideo();
+      if (!searchQuery.trim()) return;
+
+      setIsSearching(true);
+      try {
+          const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+          const data = await res.json();
+          
+          if (data.videoId && ytPlayer.current) {
+              ytPlayer.current.loadVideoById(data.videoId);
+              ytPlayer.current.pauseVideo();
+          }
+      } catch (err) {
+          console.error("Search failed:", err);
+      } finally {
+          setIsSearching(false);
+          setShowSearch(false);
+          setSearchQuery('');
       }
-      setShowSearch(false);
-      setSearchQuery('');
   };
 
   return (
@@ -269,14 +278,17 @@ export default function KeyboardSynth() {
             <form onSubmit={handleSearch} className="w-full max-w-2xl px-8">
                 <input
                     autoFocus
+                    disabled={isSearching}
                     type="text"
-                    placeholder="PASTE YOUTUBE URL OR ID AND PRESS ENTER..."
-                    className="w-full bg-transparent border-b-2 border-white text-white text-3xl font-mono uppercase focus:outline-none placeholder:text-white/20"
+                    placeholder={isSearching ? "FINDING YOUR TRACK..." : "ENTER SONG NAME AND PRESS ENTER..."}
+                    className="w-full bg-transparent border-b-2 border-white text-white text-3xl font-mono uppercase focus:outline-none placeholder:text-white/20 disabled:opacity-50"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)}
                 />
-                <p className="mt-4 text-white/40 font-mono text-sm uppercase">ESC TO CANCEL • ENTER TO LOAD</p>
+                <p className="mt-4 text-white/40 font-mono text-sm uppercase">
+                    {isSearching ? "SEARCHING..." : "ESC TO CANCEL • ENTER TO SEARCH"}
+                </p>
             </form>
         </div>
       )}
