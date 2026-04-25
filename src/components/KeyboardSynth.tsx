@@ -55,6 +55,7 @@ export default function KeyboardSynth() {
   const gridWarp = useRef(0);
   const keystrokes = useRef<number[]>([]);
   const intensity = useRef(0);
+  const lyricImpact = useRef(0);
   const chordStep = useRef(0);
   const activeKeys = useRef(new Set<string>());
   
@@ -106,6 +107,7 @@ export default function KeyboardSynth() {
     }
     screenShake.current = 20 * (1 + intensity.current * 2);
     gridWarp.current = 150 * (1 + intensity.current);
+    lyricImpact.current = 1.0; // Trigger lyric pulse
   };
 
   const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number, isGlitch: boolean) => {
@@ -136,17 +138,12 @@ export default function KeyboardSynth() {
   };
 
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
-      const words = text.split(' ');
-      const lines = [];
-      let currentLine = words[0];
+      const words = text.split(' '); const lines = []; let currentLine = words[0];
       for (let i = 1; i < words.length; i++) {
-          const word = words[i];
-          const width = ctx.measureText(currentLine + " " + word).width;
-          if (width < maxWidth) currentLine += " " + word;
-          else { lines.push(currentLine); currentLine = word; }
+          const word = words[i]; const width = ctx.measureText(currentLine + " " + word).width;
+          if (width < maxWidth) currentLine += " " + word; else { lines.push(currentLine); currentLine = word; }
       }
-      lines.push(currentLine);
-      return lines;
+      lines.push(currentLine); return lines;
   };
 
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -154,16 +151,17 @@ export default function KeyboardSynth() {
       const currentTime = ytPlayer.current.getCurrentTime();
       let activeLyrics = lyrics;
 
-      // FOR NON-SYNC SOURCES: Mathematical distribution as absolute last resort
       if (!lyricSource.includes('SYNC')) {
           const duration = ytPlayer.current.getDuration() || 210;
           activeLyrics = lyrics.map((l, i) => ({ ...l, start: (duration / lyrics.length) * i, dur: (duration / lyrics.length) * 0.8 }));
       }
 
-      // HARD SYNC: NO BUFFER, NO GUESSING
       const currentLineIndex = activeLyrics.findIndex(line => currentTime >= line.start && currentTime < (line.start + line.dur));
 
-      ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
       if (currentLineIndex === -1) {
           const nextIndex = activeLyrics.findIndex(line => line.start > currentTime);
           if (nextIndex !== -1 && activeLyrics[nextIndex].start - currentTime < 5) {
@@ -172,25 +170,48 @@ export default function KeyboardSynth() {
           }
       } else {
           const text = activeLyrics[currentLineIndex].text.toUpperCase();
-          const opacity = 0.8 + intensity.current * 0.2;
+          const impact = lyricImpact.current;
+          const pulse = Math.sin(Date.now() * 0.008) * 0.02; // Subtle heartbeat
+          const scale = 1 + (impact * 0.15) + pulse + (intensity.current * 0.05);
+          
+          ctx.translate(width / 2, height / 2);
+          
+          // SCREEN SHAKE ON LYRICS
+          if (impact > 0.1) {
+              ctx.translate((Math.random() - 0.5) * impact * 20, (Math.random() - 0.5) * impact * 20);
+          }
+          
+          ctx.scale(scale, scale);
+          
+          const opacity = 0.7 + impact * 0.3;
           const maxWidth = width * 0.8;
           const baseSize = text.length > 50 ? 40 : (text.length > 25 ? 54 : 72);
           ctx.font = `bold ${baseSize}px Inter, sans-serif`;
           ctx.letterSpacing = '10px';
+
           const wrappedLines = wrapText(ctx, text, maxWidth);
           const lineHeight = baseSize * 1.2;
           const totalTextHeight = wrappedLines.length * lineHeight;
-          const startY = height / 2 - (totalTextHeight / 2) + (lineHeight / 2);
+          const startY = -(totalTextHeight / 2) + (lineHeight / 2);
+
           wrappedLines.forEach((line, i) => {
               const y = startY + (i * lineHeight);
-              if (intensity.current > 0.4) {
-                  ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#ff0055'; ctx.fillText(line, width / 2 - 6, y);
-                  ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#00f2ff'; ctx.fillText(line, width / 2 + 6, y);
+              
+              // CHROMATIC GLITCH
+              if (impact > 0.4 || intensity.current > 0.6) {
+                  const shift = (impact * 10) + (intensity.current * 15);
+                  ctx.globalAlpha = opacity * 0.4;
+                  ctx.fillStyle = '#ff0055'; ctx.fillText(line, -shift, y);
+                  ctx.fillStyle = '#00f2ff'; ctx.fillText(line, shift, y);
               }
-              ctx.globalAlpha = opacity; ctx.fillStyle = 'white'; ctx.fillText(line, width / 2, y);
+              
+              ctx.globalAlpha = opacity;
+              ctx.fillStyle = 'white';
+              ctx.fillText(line, 0, y);
           });
       }
       ctx.restore();
+      lyricImpact.current *= 0.92; // Decay the beat impact
   };
 
   const updatePlayback = useCallback(() => {
@@ -321,16 +342,11 @@ export default function KeyboardSynth() {
                     </div>
                 </div>
 
-                <div className="font-mono">
-                    <p className="text-white/20 text-[10px] uppercase tracking-[0.5em] mb-1">
+                <div className="font-mono text-xs">
+                    <p className="text-white/20 uppercase tracking-[0.5em] mb-1">
                         {lyricsLoading ? "DECRYPTING_DATA" : `STREAM_ID: ${lyricSource}`}
                     </p>
-                    <h2 className="text-white text-xl uppercase tracking-tighter max-w-sm overflow-hidden whitespace-nowrap text-ellipsis">{activeTrack.title}</h2>
-                    <div className="mt-3 flex gap-1">
-                        {[...Array(6)].map((_, i) => (
-                            <div key={i} className="w-0.5 h-3 bg-white/30 animate-pulse" style={{ animationDelay: `${i * 0.1}s`, animationDuration: (activeKeys.current.size > 0 || isManuallyPlaying) ? '0.4s' : '1.5s' }} />
-                        ))}
-                    </div>
+                    <h2 className="text-white text-lg uppercase tracking-tighter max-w-sm overflow-hidden whitespace-nowrap text-ellipsis">{activeTrack.title}</h2>
                 </div>
               </div>
           </div>
