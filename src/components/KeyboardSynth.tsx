@@ -63,12 +63,12 @@ export default function KeyboardSynth() {
   const [isSearching, setIsSearching] = useState(false);
   const [activeTrack, setActiveTrack] = useState<{title: string} | null>(null);
   const [isManuallyPlaying, setIsManuallyPlaying] = useState(false);
+  const [lyrics, setLyrics] = useState<string[]>([]);
+  const [showLyrics, setShowLyrics] = useState(true);
   const ytPlayer = useRef<any>(null);
 
   const initAudio = () => {
-    if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
+    if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
   };
 
@@ -132,6 +132,36 @@ export default function KeyboardSynth() {
     gridWarp.current *= 0.94;
   };
 
+  const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+      if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
+      
+      const currentTime = ytPlayer.current.getCurrentTime();
+      const duration = ytPlayer.current.getDuration();
+      if (!duration) return;
+
+      const progress = currentTime / duration;
+      const totalLines = lyrics.length;
+      const currentLineIndex = Math.floor(progress * totalLines);
+
+      ctx.save();
+      ctx.font = 'bold 40px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.letterSpacing = '10px';
+
+      // Draw 3 lines (previous, current, next)
+      for (let i = -1; i <= 1; i++) {
+          const index = currentLineIndex + i;
+          if (index >= 0 && index < totalLines) {
+              const opacity = (1 - Math.abs(i) * 0.7) * (0.1 + intensity.current * 0.4);
+              ctx.globalAlpha = opacity;
+              ctx.fillStyle = 'white';
+              ctx.fillText(lyrics[index].toUpperCase(), width / 2, height / 2 + (i * 60));
+          }
+      }
+      ctx.restore();
+  };
+
   const updatePlayback = useCallback(() => {
     if (!ytPlayer.current || !ytPlayer.current.playVideo) return;
     if (activeKeys.current.size > 0 || isManuallyPlaying) {
@@ -158,7 +188,10 @@ export default function KeyboardSynth() {
       ctx.translate((Math.random() - 0.5) * screenShake.current, (Math.random() - 0.5) * screenShake.current);
       screenShake.current *= 0.85;
     }
+    
+    drawLyrics(ctx, canvas.width, canvas.height);
     drawGrid(ctx, canvas.width, canvas.height, isGlitch);
+
     ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
     for (let i = 0; i < particlesRef.current.length; i++) {
       for (let j = i + 1; j < Math.min(i + 5, particlesRef.current.length); j++) {
@@ -184,14 +217,12 @@ export default function KeyboardSynth() {
     tag.src = "https://www.youtube.com/iframe_api";
     const firstScriptTag = document.getElementsByTagName('script')[0];
     firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-
     (window as any).onYouTubeIframeAPIReady = () => {
         ytPlayer.current = new (window as any).YT.Player('yt-player', {
             height: '0', width: '0', videoId: 'dQw4w9WgXcQ',
             events: { 'onReady': (event: any) => event.target.setVolume(0) }
         });
     };
-
     const handleResize = () => { if (canvasRef.current) { canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; } };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showSearch) return;
@@ -207,10 +238,7 @@ export default function KeyboardSynth() {
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => { activeKeys.current.delete(e.code); updatePlayback(); };
-    const handleMouseMove = (e: MouseEvent) => {
-      mousePos.current = { x: e.clientX, y: e.clientY };
-    };
-
+    const handleMouseMove = (e: MouseEvent) => { mousePos.current = { x: e.clientX, y: e.clientY }; };
     window.addEventListener('resize', handleResize); window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); window.addEventListener('mousemove', handleMouseMove);
     handleResize(); requestRef.current = requestAnimationFrame(animate);
     return () => {
@@ -229,6 +257,11 @@ export default function KeyboardSynth() {
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
               setActiveTrack({ title: data.title });
+              
+              // Fetch lyrics simultaneously
+              const lyrRes = await fetch(`/api/lyrics?title=${encodeURIComponent(data.title)}`);
+              const lyrData = await lyrRes.json();
+              setLyrics(lyrData.lyrics || []);
           }
       } catch (err) { console.error("Search failed:", err); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
   };
@@ -249,9 +282,14 @@ export default function KeyboardSynth() {
           <div className="fixed bottom-12 left-12 z-[500] font-mono">
               <div className="flex items-center gap-4 mb-2">
                 <p className="text-white/20 text-xs uppercase tracking-[0.3em]">SYSTEM ACTIVE // NOW PLAYING</p>
-                <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
-                    {isManuallyPlaying ? "MANUAL: ON" : "MANUAL: OFF"}
-                </button>
+                <div className="flex gap-2">
+                    <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
+                        {isManuallyPlaying ? "MANUAL: ON" : "MANUAL: OFF"}
+                    </button>
+                    <button onClick={() => setShowLyrics(!showLyrics)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
+                        {showLyrics ? "LYRICS: ON" : "LYRICS: OFF"}
+                    </button>
+                </div>
               </div>
               <h2 className="text-white text-xl uppercase tracking-tighter max-w-md">{activeTrack.title}</h2>
               <div className="mt-4 flex gap-1">
