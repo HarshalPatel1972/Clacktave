@@ -2,7 +2,8 @@
 
 import React, { useEffect, useRef } from 'react';
 
-const SCALE = [130.81, 155.56, 174.61, 196.00, 233.08, 261.63, 311.13, 349.23, 392.00, 466.16];
+const SCALE = [130.81, 146.83, 155.56, 174.61, 196.00, 207.65, 233.08, 261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16, 523.25];
+const PROGRESSION = [0, 5, 6, 4]; // i - VI - VII - v in C Minor
 const COLORS_CALM = ['#ffffff', '#00f2ff', '#7000ff'];
 const COLORS_HOT = ['#ff0055', '#ffaa00', '#ff00ff'];
 
@@ -11,7 +12,7 @@ class Particle {
   constructor(x: number, y: number, color: string, intensity: number) {
     this.x = x; this.y = y;
     const angle = Math.random() * Math.PI * 2;
-    const speed = (Math.random() * 8 + 2) * (1 + intensity);
+    const speed = (Math.random() * 8 + 2) * (1 + intensity * 2);
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
     this.size = Math.random() * 3 + 1;
@@ -32,15 +33,16 @@ class Glyph {
     this.char = char; this.x = x; this.y = y; this.life = 1.0; this.color = color; this.intensity = intensity;
   }
   update() { this.life -= 0.04 * (1 + this.intensity); }
-  draw(ctx: CanvasRenderingContext2D) {
-    ctx.save(); ctx.globalAlpha = this.life * 0.3;
-    ctx.font = `bold ${200 * (2 - this.life)}px Inter, sans-serif`;
+  draw(ctx: CanvasRenderingContext2D, glitch: boolean) {
+    ctx.save(); ctx.globalAlpha = this.life * (glitch ? 0.8 : 0.4);
+    const size = 200 * (2 - this.life);
+    ctx.font = `bold ${size}px Inter, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (this.intensity > 0.5) {
-      ctx.fillStyle = '#ff0055'; ctx.fillText(this.char, this.x - 10 * this.intensity, this.y);
-      ctx.fillStyle = '#00f2ff'; ctx.fillText(this.char, this.x + 10 * this.intensity, this.y);
+    if (this.intensity > 0.4) {
+      ctx.fillStyle = '#ff0055'; ctx.fillText(this.char, this.x - (15 * this.intensity), this.y);
+      ctx.fillStyle = '#00f2ff'; ctx.fillText(this.char, this.x + (15 * this.intensity), this.y);
     }
-    ctx.fillStyle = this.color; ctx.fillText(this.char, this.x, this.y);
+    ctx.fillStyle = glitch ? '#000000' : this.color; ctx.fillText(this.char, this.x, this.y);
     ctx.restore();
   }
 }
@@ -56,7 +58,8 @@ export default function KeyboardSynth() {
   const screenShake = useRef(0);
   const gridWarp = useRef(0);
   const keystrokes = useRef<number[]>([]);
-  const intensity = useRef(0); // 0 to 1 based on WPM
+  const intensity = useRef(0);
+  const chordStep = useRef(0);
 
   const initMouseDrone = () => {
     if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -67,78 +70,86 @@ export default function KeyboardSynth() {
     osc.start(); mouseDroneRef.current = { osc, gain, filter };
   };
 
-  const playChord = (frequency: number) => {
+  const playChord = (charCode: number) => {
     if (!audioCtxRef.current) initMouseDrone();
     const ctx = audioCtxRef.current!;
-    const intervals = [1, 1.2, 1.5, 1.75, 2.2];
+    chordStep.current++;
+    const progIndex = Math.floor(chordStep.current / 8) % PROGRESSION.length;
+    const rootFreq = SCALE[PROGRESSION[progIndex]];
+    const intervals = [1, 1.2, 1.5, 1.8, 2.2]; // Minor 9th stack
+
     intervals.forEach((interval, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      // Timbre morphing based on intensity
-      osc.type = Math.random() < intensity.current ? 'sawtooth' : (i === 0 ? 'sawtooth' : 'sine');
-      osc.frequency.setValueAtTime(frequency * interval, ctx.currentTime);
-      const volume = (0.1 / (i + 1)) * (1.0 - (i * 0.1)) * (1 + intensity.current);
+      osc.type = intensity.current > 0.6 ? (Math.random() > 0.5 ? 'sawtooth' : 'square') : (i === 0 ? 'sawtooth' : 'sine');
+      osc.frequency.setValueAtTime(rootFreq * interval * (1 + (charCode % 12) / 12), ctx.currentTime);
+      const volume = (0.08 / (i + 1)) * (1.0 + intensity.current * 2);
       gain.gain.setValueAtTime(volume, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.5);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 3.0);
       osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(); osc.stop(ctx.currentTime + 2.5);
+      osc.start(); osc.stop(ctx.currentTime + 3.0);
     });
   };
 
   const spawnVisuals = (char: string, keyCode: number) => {
     const x = Math.random() * window.innerWidth;
     const y = Math.random() * window.innerHeight;
-    const palette = intensity.current > 0.5 ? COLORS_HOT : COLORS_CALM;
+    const palette = intensity.current > 0.4 ? COLORS_HOT : COLORS_CALM;
     const color = palette[keyCode % palette.length];
     glyphsRef.current.push(new Glyph(char, x, y, color, intensity.current));
-    for (let i = 0; i < 15 * (1 + intensity.current); i++) {
+    for (let i = 0; i < 20 * (1 + intensity.current * 2); i++) {
       particlesRef.current.push(new Particle(x, y, color, intensity.current));
     }
-    screenShake.current = 15 * (1 + intensity.current);
-    gridWarp.current = 100 * (1 + intensity.current);
+    screenShake.current = 20 * (1 + intensity.current * 2);
+    gridWarp.current = 150 * (1 + intensity.current);
   };
 
-  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number, isGlitch: boolean) => {
     ctx.save();
-    ctx.strokeStyle = intensity.current > 0.5 ? 'rgba(255, 0, 85, 0.08)' : 'rgba(255, 255, 255, 0.04)';
-    ctx.lineWidth = 0.5 + intensity.current;
-    const spacing = 80 - (intensity.current * 20);
+    ctx.strokeStyle = isGlitch ? 'rgba(0, 0, 0, 0.4)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.15)' : 'rgba(255, 255, 255, 0.05)');
+    ctx.lineWidth = 0.5 + intensity.current * 2;
+    const spacing = 80 - (intensity.current * 30);
     for (let x = 0; x <= width; x += spacing) {
       ctx.beginPath();
-      for (let y = 0; y <= height; y += 20) {
+      for (let y = 0; y <= height; y += 25) {
         const dMouse = Math.hypot(x - mousePos.current.x, y - mousePos.current.y);
-        const warp = (Math.exp(-dMouse / 150) * 40 + (Math.random() * gridWarp.current * 0.1)) * (1 + intensity.current);
+        const warp = (Math.exp(-dMouse / 150) * 50 + (Math.random() * gridWarp.current * 0.1)) * (1 + intensity.current);
         ctx.lineTo(x + warp * (x - mousePos.current.x) / 150, y + warp * (y - mousePos.current.y) / 150);
       }
       ctx.stroke();
     }
     for (let y = 0; y <= height; y += spacing) {
       ctx.beginPath();
-      for (let x = 0; x <= width; x += 20) {
+      for (let x = 0; x <= width; x += 25) {
         const dMouse = Math.hypot(x - mousePos.current.x, y - mousePos.current.y);
-        const warp = (Math.exp(-dMouse / 150) * 40 + (Math.random() * gridWarp.current * 0.1)) * (1 + intensity.current);
+        const warp = (Math.exp(-dMouse / 150) * 50 + (Math.random() * gridWarp.current * 0.1)) * (1 + intensity.current);
         ctx.lineTo(x + warp * (x - mousePos.current.x) / 150, y + warp * (y - mousePos.current.y) / 150);
       }
       ctx.stroke();
     }
     ctx.restore();
-    gridWarp.current *= 0.95;
+    gridWarp.current *= 0.94;
   };
 
   const animate = () => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d'); if (!ctx) return;
-    ctx.fillStyle = intensity.current > 0.8 ? 'rgba(20, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.2)';
+    const isGlitch = intensity.current > 0.9 && Math.random() > 0.8;
+    
+    ctx.fillStyle = isGlitch ? 'white' : (intensity.current > 0.7 ? 'rgba(15, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.2)');
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
     ctx.save();
     if (screenShake.current > 0) {
       ctx.translate((Math.random() - 0.5) * screenShake.current, (Math.random() - 0.5) * screenShake.current);
-      screenShake.current *= 0.9;
+      screenShake.current *= 0.85;
     }
-    drawGrid(ctx, canvas.width, canvas.height);
-    ctx.strokeStyle = intensity.current > 0.5 ? 'rgba(255, 0, 85, 0.1)' : 'rgba(255, 255, 255, 0.05)';
+
+    drawGrid(ctx, canvas.width, canvas.height, isGlitch);
+
+    ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
     for (let i = 0; i < particlesRef.current.length; i++) {
-      for (let j = i + 1; j < particlesRef.current.length; j++) {
+      for (let j = i + 1; j < Math.min(i + 5, particlesRef.current.length); j++) {
         const p1 = particlesRef.current[i]; const p2 = particlesRef.current[j];
         const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
         if (dist < 150) {
@@ -147,16 +158,13 @@ export default function KeyboardSynth() {
         }
       }
     }
-    for (let i = glyphsRef.current.length - 1; i >= 0; i--) {
-      const g = glyphsRef.current[i]; g.update(); g.draw(ctx);
-      if (g.life <= 0) glyphsRef.current.splice(i, 1);
-    }
-    for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-      const p = particlesRef.current[i]; p.update(); p.draw(ctx);
-      if (p.life <= 0) particlesRef.current.splice(i, 1);
-    }
+    glyphsRef.current.forEach(g => { g.update(); g.draw(ctx, isGlitch); });
+    glyphsRef.current = glyphsRef.current.filter(g => g.life > 0);
+    particlesRef.current.forEach(p => { p.update(); p.draw(ctx); });
+    particlesRef.current = particlesRef.current.filter(p => p.life > 0);
+
     ctx.restore();
-    intensity.current *= 0.995; // Natural decay
+    intensity.current *= 0.992;
     requestRef.current = requestAnimationFrame(animate);
   };
 
@@ -165,11 +173,11 @@ export default function KeyboardSynth() {
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault(); if (e.repeat) return;
       const now = Date.now(); keystrokes.current.push(now);
-      keystrokes.current = keystrokes.current.filter(t => now - t < 5000);
-      intensity.current = Math.min(1.0, intensity.current + 0.05 + (keystrokes.current.length / 50));
+      keystrokes.current = keystrokes.current.filter(t => now - t < 4000);
+      intensity.current = Math.min(1.0, intensity.current + 0.08 + (keystrokes.current.length / 40));
       const charCode = e.key.toUpperCase().charCodeAt(0);
       if ((charCode >= 65 && charCode <= 90) || (charCode >= 48 && charCode <= 57)) {
-        playChord(SCALE[charCode % SCALE.length]);
+        playChord(charCode);
         spawnVisuals(e.key.toUpperCase(), charCode);
       }
     };
