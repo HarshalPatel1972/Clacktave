@@ -139,64 +139,45 @@ export default function KeyboardSynth() {
       const words = text.split(' ');
       const lines = [];
       let currentLine = words[0];
-
       for (let i = 1; i < words.length; i++) {
           const word = words[i];
           const width = ctx.measureText(currentLine + " " + word).width;
-          if (width < maxWidth) {
-              currentLine += " " + word;
-          } else {
-              lines.push(currentLine);
-              currentLine = word;
-          }
+          if (width < maxWidth) currentLine += " " + word;
+          else { lines.push(currentLine); currentLine = word; }
       }
       lines.push(currentLine);
       return lines;
   };
 
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
-      
-      const currentTime = ytPlayer.current.getCurrentTime();
-      let activeLyrics = lyrics;
-
-      // RE-SYNC LOGIC FOR FALLBACK SOURCES
-      if (lyricSource !== 'YOUTUBE_SYNC') {
-          const duration = ytPlayer.current.getDuration() || 210;
-          activeLyrics = lyrics.map((l, i) => ({
-              ...l,
-              start: (duration / lyrics.length) * i,
-              dur: (duration / lyrics.length) * 0.8
-          }));
+      if (!showLyrics || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
+      if (lyrics.length === 0) {
+          if (!lyricsLoading && activeTrack) {
+              ctx.save(); ctx.font = 'bold 24px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.2)';
+              ctx.fillText("LYRICS UNAVAILABLE FOR THIS TRACK", width / 2, height / 2); ctx.restore();
+          }
+          return;
       }
-
-      const currentLineIndex = activeLyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
-
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
+      const currentTime = ytPlayer.current.getCurrentTime();
+      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
+      ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       if (currentLineIndex === -1) {
-          const nextIndex = activeLyrics.findIndex(line => line.start > currentTime);
+          const nextIndex = lyrics.findIndex(line => line.start > currentTime);
           if (nextIndex !== -1) {
-              ctx.font = 'italic 20px Inter, sans-serif'; ctx.fillStyle = 'white'; ctx.globalAlpha = 0.1;
-              ctx.fillText("READY: " + activeLyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
+              ctx.font = 'italic 24px Inter, sans-serif'; ctx.fillStyle = 'white'; ctx.globalAlpha = 0.1 + intensity.current * 0.2;
+              ctx.fillText("READY: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
           }
       } else {
-          const text = activeLyrics[currentLineIndex].text.toUpperCase();
+          const text = lyrics[currentLineIndex].text.toUpperCase();
           const opacity = 0.7 + intensity.current * 0.3;
           const maxWidth = width * 0.8;
-          
-          // Adaptive font size based on length
           const baseSize = text.length > 40 ? 48 : 64;
           ctx.font = `bold ${baseSize}px Inter, sans-serif`;
-          ctx.letterSpacing = '8px';
-
+          ctx.letterSpacing = '10px';
           const wrappedLines = wrapText(ctx, text, maxWidth);
           const lineHeight = baseSize * 1.2;
           const totalTextHeight = wrappedLines.length * lineHeight;
           const startY = height / 2 - (totalTextHeight / 2) + (lineHeight / 2);
-
           wrappedLines.forEach((line, i) => {
               const y = startY + (i * lineHeight);
               if (intensity.current > 0.4) {
@@ -306,37 +287,56 @@ export default function KeyboardSynth() {
     <>
       <canvas ref={canvasRef} className="fixed inset-0 w-full h-full bg-black touch-none" style={{ cursor: 'auto' }} id="clacktave-canvas" />
       <div id="yt-player" className="hidden" />
+      
       {showSearch && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-3xl">
             <form onSubmit={handleSearch} className="w-full max-w-2xl px-8 text-center">
-                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "PENETRATING SERVERS..." : "SEARCH ANY SONG..."} className="w-full bg-transparent border-b-2 border-white text-white text-6xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
+                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "INFILTRATING..." : "INITIATE SEARCH..."} className="w-full bg-transparent border-b-2 border-white text-white text-6xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
                 <p className="mt-10 text-white/30 font-mono text-xs tracking-[0.8em] uppercase">
-                    {isSearching ? `ESTABLISHING CONNECTION... 00:00:${countdown < 10 ? '0'+countdown : countdown}` : "ESC TO DISMISS • ENTER TO INITIATE"}
+                    {isSearching ? `00:00:${countdown < 10 ? '0'+countdown : countdown}` : "ESC TO ABORT • ENTER TO CONFIRM"}
                 </p>
             </form>
         </div>
       )}
+
       {activeTrack && !showSearch && (
-          <div className="fixed bottom-12 left-12 z-[500] font-mono">
-              <div className="flex items-center gap-4 mb-2">
-                <p className="text-white/20 text-[10px] uppercase tracking-[0.4em]">
-                    {lyricsLoading ? "DECRYPTING_LYRICS..." : `SYSTEM_READY // SRC_${lyricSource}`}
-                </p>
-                <div className="flex gap-2">
-                    <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-2 py-0.5 border border-white/10 transition-colors uppercase">
-                        MANUAL_{isManuallyPlaying ? "ON" : "OFF"}
-                    </button>
-                    <button onClick={() => setShowLyrics(!showLyrics)} className="text-[10px] bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-2 py-0.5 border border-white/10 transition-colors uppercase">
-                        LYRICS_{showLyrics ? "ON" : "OFF"}
-                    </button>
+          <div className="fixed bottom-12 left-12 z-[500] flex items-end gap-12">
+              <div className="flex flex-col gap-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 hover:border-white/30 transition-all cursor-pointer group" onClick={() => setIsManuallyPlaying(!isManuallyPlaying)}>
+                        {isManuallyPlaying ? (
+                            <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                        ) : (
+                            <svg className="w-5 h-5 text-white fill-current translate-x-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        )}
+                    </div>
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all cursor-pointer ${showLyrics ? 'bg-white/10 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/10 hover:border-white/30'}`} onClick={() => setShowLyrics(!showLyrics)}>
+                        <svg className={`w-5 h-5 ${showLyrics ? 'text-white' : 'text-white/40'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 7h8" /><path d="M8 11h8" /></svg>
+                    </div>
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 hover:border-white/30 transition-all cursor-pointer" onClick={() => setShowSearch(true)}>
+                        <svg className="w-5 h-5 text-white/40 group-hover:text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                    </div>
+                </div>
+
+                <div className="font-mono">
+                    <p className="text-white/20 text-[10px] uppercase tracking-[0.5em] mb-1">
+                        {lyricsLoading ? "DECRYPTING_DATA" : `STREAM_ID: ${lyricSource}`}
+                    </p>
+                    <h2 className="text-white text-xl uppercase tracking-tighter max-w-sm overflow-hidden whitespace-nowrap text-ellipsis">{activeTrack.title}</h2>
+                    <div className="mt-3 flex gap-1">
+                        {[...Array(6)].map((_, i) => (
+                            <div key={i} className="w-0.5 h-3 bg-white/30 animate-pulse" style={{ animationDelay: `${i * 0.1}s`, animationDuration: (activeKeys.current.size > 0 || isManuallyPlaying) ? '0.4s' : '1.5s' }} />
+                        ))}
+                    </div>
                 </div>
               </div>
-              <h2 className="text-white text-xl uppercase tracking-tighter max-w-md">{activeTrack.title}</h2>
-              <div className="mt-4 flex gap-1">
-                  {[...Array(4)].map((_, i) => (
-                      <div key={i} className="w-1 h-4 bg-white/20 animate-bounce" style={{ animationDelay: `${i * 0.1}s`, animationPlayState: (activeKeys.current.size > 0 || isManuallyPlaying) ? 'running' : 'paused' }} />
-                  ))}
-              </div>
+          </div>
+      )}
+
+      {/* SEARCH HINT */}
+      {!showSearch && !activeTrack && (
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+              <p className="text-white/10 font-mono text-xs tracking-[1em] uppercase animate-pulse">PRESS [/] TO INITIATE SYSTEM</p>
           </div>
       )}
     </>
