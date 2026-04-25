@@ -114,18 +114,16 @@ export default function KeyboardSynth() {
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
       const currentTime = ytPlayer.current.getCurrentTime();
-      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime < (line.start + line.dur));
+      
+      // STRICT SINGLE-LINE SELECTION TO PREVENT OVERLAP
+      const currentLine = lyrics.find(line => currentTime >= line.start && currentTime < (line.start + line.dur));
+      if (!currentLine) return;
 
-      if (currentLineIndex === -1) return;
-
-      const text = lyrics[currentLineIndex].text.toUpperCase();
+      const text = currentLine.text.toUpperCase();
       const maxWidth = width * 0.7;
       
-      // APPLE-LEVEL KINETICS: PULSE BASED ON LYRIC DENSITY (Proxy for beat)
       const lineLength = text.length;
-      const duration = lyrics[currentLineIndex].dur;
-      const energy = Math.min(1.5, (lineLength / duration) / 10); // Faster lines = more energy
-      
+      const energy = Math.min(1.5, (lineLength / currentLine.dur) / 10);
       const pulse = Math.sin(Date.now() * 0.01 * (1 + energy)) * 0.02;
       const scale = 1 + pulse + (lyricImpact.current * 0.1);
       
@@ -135,17 +133,17 @@ export default function KeyboardSynth() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      const baseSize = text.length > 40 ? 32 : 48;
+      const baseSize = text.length > 50 ? 32 : 48;
       ctx.font = `600 ${baseSize}px Inter, -apple-system, sans-serif`;
       ctx.letterSpacing = '4px';
       
       const lines = wrapText(ctx, text, maxWidth);
-      const lineHeight = baseSize * 1.4;
+      const lineHeight = baseSize * 1.6; // INCREASED LINE HEIGHT FOR CLARITY
       const startY = -(lines.length * lineHeight) / 2 + lineHeight / 2;
 
       lines.forEach((line, i) => {
           ctx.fillStyle = 'white';
-          ctx.globalAlpha = 0.9 + (pulse * 5);
+          ctx.globalAlpha = 1.0; // FULL OPACITY FOR CLARITY
           ctx.fillText(line, 0, startY + (i * lineHeight));
       });
       ctx.restore();
