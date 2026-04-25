@@ -8,46 +8,58 @@ export async function GET(request: Request) {
   let captions: any[] = [];
   let source = 'NONE';
 
-  // 1. THE "INTERNAL YOUTUBE" METHOD (JSON3)
   if (videoId) {
     try {
-      // Fetch the video page to get player data
       const videoPageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
       });
       const html = await videoPageRes.text();
-      
-      // Extract caption tracks info from ytInitialPlayerResponse
       const match = html.match(/"captionTracks":\s*(\[.*?\])/);
+      
       if (match) {
         const tracks = JSON.parse(match[1]);
-        // Find English or fallback to first track
-        const track = tracks.find((t: any) => t.languageCode.startsWith('en')) || tracks[0];
+        // Priority: Manual English -> Auto-generated English -> Any English
+        const track = tracks.find((t: any) => t.vssId === '.en') || 
+                      tracks.find((t: any) => t.vssId === 'a.en') ||
+                      tracks.find((t: any) => t.languageCode.startsWith('en')) || 
+                      tracks[0];
         
         if (track && track.baseUrl) {
-          // Fetch the JSON3 formatted captions
           const captionRes = await fetch(`${track.baseUrl}&fmt=json3`);
           const captionData = await captionRes.json();
           
           if (captionData.events) {
+            // ROLLING BUFFER PARSER
+            let lastText = "";
             captions = captionData.events
-              .filter((ev: any) => ev.segs)
-              .map((ev: any) => ({
-                start: ev.tStartMs / 1000,
-                dur: ev.dDurationMs / 1000,
-                text: ev.segs.map((s: any) => s.utf8).join('').trim()
-              }))
-              .filter((c: any) => c.text.length > 0);
-            source = 'YOUTUBE_INTERNAL_JSON3';
+              .filter((ev: any) => ev.segs && ev.tStartMs !== undefined)
+              .map((ev: any) => {
+                const text = ev.segs.map((s: any) => s.utf8).join('').trim();
+                if (!text || text === lastText) return null;
+                lastText = text;
+                return {
+                  start: ev.tStartMs / 1000,
+                  // Auto-captions don't have reliable durations, 
+                  // we calculate them as the distance to the NEXT event
+                  text: text
+                };
+              })
+              .filter(Boolean);
+
+            // Calculate exact durations based on subsequent event starts
+            captions = captions.map((c: any, i: number) => ({
+              ...c,
+              dur: i < captions.length - 1 ? Math.min(captions[i+1].start - c.start, 5) : 3
+            }));
+
+            source = track.vssId === 'a.en' ? 'YOUTUBE_AUTO_SYNC' : 'YOUTUBE_MANUAL_SYNC';
           }
         }
       }
-    } catch (e) {
-      console.error("Internal YouTube Fetch Error:", e);
-    }
+    } catch (e) {}
   }
 
-  // 2. BACKUP: LRC DATABASE (If internal fails)
+  // FALLBACK: LRCLib (Highly synced)
   if (captions.length === 0 && title) {
       try {
           const lrcRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(title)}`);

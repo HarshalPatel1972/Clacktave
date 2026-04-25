@@ -150,28 +150,31 @@ export default function KeyboardSynth() {
   };
 
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      if (!showLyrics || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
-      if (lyrics.length === 0) {
-          if (!lyricsLoading && activeTrack) {
-              ctx.save(); ctx.font = 'bold 24px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.2)';
-              ctx.fillText("LYRICS UNAVAILABLE FOR THIS TRACK", width / 2, height / 2); ctx.restore();
-          }
-          return;
-      }
+      if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
       const currentTime = ytPlayer.current.getCurrentTime();
-      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
+      let activeLyrics = lyrics;
+
+      // FOR NON-SYNC SOURCES: Mathematical distribution as absolute last resort
+      if (!lyricSource.includes('SYNC')) {
+          const duration = ytPlayer.current.getDuration() || 210;
+          activeLyrics = lyrics.map((l, i) => ({ ...l, start: (duration / lyrics.length) * i, dur: (duration / lyrics.length) * 0.8 }));
+      }
+
+      // HARD SYNC: NO BUFFER, NO GUESSING
+      const currentLineIndex = activeLyrics.findIndex(line => currentTime >= line.start && currentTime < (line.start + line.dur));
+
       ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       if (currentLineIndex === -1) {
-          const nextIndex = lyrics.findIndex(line => line.start > currentTime);
-          if (nextIndex !== -1) {
-              ctx.font = 'italic 24px Inter, sans-serif'; ctx.fillStyle = 'white'; ctx.globalAlpha = 0.1 + intensity.current * 0.2;
-              ctx.fillText("READY: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
+          const nextIndex = activeLyrics.findIndex(line => line.start > currentTime);
+          if (nextIndex !== -1 && activeLyrics[nextIndex].start - currentTime < 5) {
+              ctx.font = 'italic 20px Inter, sans-serif'; ctx.fillStyle = 'white'; ctx.globalAlpha = 0.1;
+              ctx.fillText("READY: " + activeLyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
           }
       } else {
-          const text = lyrics[currentLineIndex].text.toUpperCase();
-          const opacity = 0.7 + intensity.current * 0.3;
+          const text = activeLyrics[currentLineIndex].text.toUpperCase();
+          const opacity = 0.8 + intensity.current * 0.2;
           const maxWidth = width * 0.8;
-          const baseSize = text.length > 40 ? 48 : 64;
+          const baseSize = text.length > 50 ? 40 : (text.length > 25 ? 54 : 72);
           ctx.font = `bold ${baseSize}px Inter, sans-serif`;
           ctx.letterSpacing = '10px';
           const wrappedLines = wrapText(ctx, text, maxWidth);
@@ -291,9 +294,9 @@ export default function KeyboardSynth() {
       {showSearch && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-3xl">
             <form onSubmit={handleSearch} className="w-full max-w-2xl px-8 text-center">
-                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "INFILTRATING..." : "INITIATE SEARCH..."} className="w-full bg-transparent border-b-2 border-white text-white text-6xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
+                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "PENETRATING SERVERS..." : "INITIATE SEARCH..."} className="w-full bg-transparent border-b-2 border-white text-white text-6xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
                 <p className="mt-10 text-white/30 font-mono text-xs tracking-[0.8em] uppercase">
-                    {isSearching ? `00:00:${countdown < 10 ? '0'+countdown : countdown}` : "ESC TO ABORT • ENTER TO CONFIRM"}
+                    {isSearching ? `ESTABLISHING CONNECTION... 00:00:${countdown < 10 ? '0'+countdown : countdown}` : "ESC TO ABORT • ENTER TO CONFIRM"}
                 </p>
             </form>
         </div>
@@ -333,7 +336,6 @@ export default function KeyboardSynth() {
           </div>
       )}
 
-      {/* SEARCH HINT */}
       {!showSearch && !activeTrack && (
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
               <p className="text-white/10 font-mono text-xs tracking-[1em] uppercase animate-pulse">PRESS [/] TO INITIATE SYSTEM</p>
