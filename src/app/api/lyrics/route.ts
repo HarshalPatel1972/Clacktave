@@ -10,61 +10,65 @@ export async function GET(request: Request) {
   let captions: any[] = [];
   let source = 'NONE';
 
-  // STRATEGY 1: YouTube Synced Captions
+  // 1. ADVANCED YOUTUBE CAPTION DISCOVERY
   if (videoId) {
-    const langs = ['en', 'en-GB', 'en-US', 'a.en']; 
-    for (const lang of langs) {
-        try {
-            const subtitles = await getSubtitles({ videoID: videoId, lang });
-            if (subtitles && subtitles.length > 0) {
-                captions = subtitles.map((s: any) => ({
-                    start: parseFloat(s.start),
-                    dur: parseFloat(s.dur),
-                    text: s.text.replace(/&amp;#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;nbsp;/g, ' ')
-                }));
-                source = 'YOUTUBE_SYNC';
-                break;
-            }
-        } catch (e) {}
+    const langCodes = ['en', 'en-US', 'en-GB', 'a.en'];
+    for (const lang of langCodes) {
+      try {
+        const subtitles = await getSubtitles({ videoID: videoId, lang });
+        if (subtitles && subtitles.length > 0) {
+          captions = subtitles.map((s: any) => ({
+            start: parseFloat(s.start),
+            dur: parseFloat(s.dur),
+            text: s.text.replace(/&amp;#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;nbsp;/g, ' ')
+          }));
+          source = 'YOUTUBE_SYNC';
+          break;
+        }
+      } catch (e) {}
     }
   }
 
-  // STRATEGY 2: Web Lyrics Fallback (Unsynced)
+  // 2. DEDICATED LYRICS API (Lyrics.ovh)
   if (captions.length === 0 && title) {
     try {
-        let artist = '';
-        let song = title;
-        // Handle "Artist - Song" or "Artist: Song"
-        if (title.includes(' - ')) [artist, song] = title.split(' - ');
-        else if (title.includes(': ')) [artist, song] = title.split(': ');
-        
-        const rawLyrics = await lyricsFinder(artist.trim(), song.trim());
-        if (rawLyrics) {
-            const lines = rawLyrics.split('\n').filter((l: string) => l.trim().length > 0);
-            captions = lines.map((text: string, i: number) => ({
-                start: i * 5, 
-                dur: 4,
-                text: text.trim()
-            }));
-            source = 'WEB_FETCH';
-        }
+      let artist = '';
+      let song = title;
+      if (title.includes(' - ')) [artist, song] = title.split(' - ');
+      
+      const res = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist.trim())}/${encodeURIComponent(song.trim())}`);
+      const data = await res.json();
+      
+      if (data.lyrics) {
+        const lines = data.lyrics.split('\n').filter((l: string) => l.trim().length > 0);
+        captions = lines.map((text: string, i: number) => ({
+          start: i * 5,
+          dur: 4,
+          text: text.trim()
+        }));
+        source = 'LYRICS_OVH';
+      }
     } catch (e) {}
   }
 
-  // Final check: if still nothing, try searching the title directly as the song name
+  // 3. SECONDARY WEB SCRAPE (lyrics-finder)
   if (captions.length === 0 && title) {
-      try {
-          const fallbackLyrics = await lyricsFinder('', title);
-          if (fallbackLyrics) {
-              const lines = fallbackLyrics.split('\n').filter((l: string) => l.trim().length > 0);
-              captions = lines.map((text: string, i: number) => ({
-                  start: i * 5, 
-                  dur: 4,
-                  text: text.trim()
-              }));
-              source = 'FALLBACK_WEB';
-          }
-      } catch (e) {}
+    try {
+      let artist = '';
+      let song = title;
+      if (title.includes(' - ')) [artist, song] = title.split(' - ');
+      
+      const rawLyrics = await lyricsFinder(artist, song);
+      if (rawLyrics) {
+        const lines = rawLyrics.split('\n').filter((l: string) => l.trim().length > 0);
+        captions = lines.map((text: string, i: number) => ({
+          start: i * 5,
+          dur: 4,
+          text: text.trim()
+        }));
+        source = 'WEB_SCRAPE';
+      }
+    } catch (e) {}
   }
 
   return NextResponse.json({ lyrics: captions, source });
