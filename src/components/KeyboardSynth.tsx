@@ -4,42 +4,36 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 const SCALE = [130.81, 146.83, 155.56, 174.61, 196.00, 207.65, 233.08, 261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16, 523.25];
 const PROGRESSION = [0, 5, 6, 4];
-const COLORS_CALM = ['#ffffff', '#00f2ff', '#7000ff'];
-const COLORS_HOT = ['#ff0055', '#ffaa00', '#ff00ff'];
 
 class Particle {
   x: number; y: number; vx: number; vy: number; size: number; color: string; life: number; decay: number;
   constructor(x: number, y: number, color: string, intensity: number) {
     this.x = x; this.y = y;
     const angle = Math.random() * Math.PI * 2;
-    const speed = (Math.random() * 8 + 2) * (1 + intensity * 2);
+    const speed = (Math.random() * 5 + 1) * (1 + intensity);
     this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
-    this.size = Math.random() * 3 + 1; this.color = color;
-    this.life = 1.0; this.decay = (Math.random() * 0.02 + 0.01) * (0.5 + intensity);
+    this.size = Math.random() * 2 + 1; this.color = color;
+    this.life = 1.0; this.decay = 0.015;
   }
-  update() { this.x += this.vx; this.y += this.vy; this.vx *= 0.96; this.vy *= 0.96; this.life -= this.decay; }
+  update() { this.x += this.vx; this.y += this.vy; this.vx *= 0.98; this.vy *= 0.98; this.life -= this.decay; }
   draw(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = this.color; ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color; ctx.globalAlpha = this.life * 0.6;
     ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
   }
 }
 
 class Glyph {
-  char: string; x: number; y: number; life: number; color: string; intensity: number;
-  constructor(char: string, x: number, y: number, color: string, intensity: number) {
-    this.char = char; this.x = x; this.y = y; this.life = 1.0; this.color = color; this.intensity = intensity;
+  char: string; x: number; y: number; life: number; color: string;
+  constructor(char: string, x: number, y: number, color: string) {
+    this.char = char; this.x = x; this.y = y; this.life = 1.0; this.color = color;
   }
-  update() { this.life -= 0.04 * (1 + this.intensity); }
-  draw(ctx: CanvasRenderingContext2D, glitch: boolean) {
-    ctx.save(); ctx.globalAlpha = this.life * (glitch ? 0.8 : 0.4);
-    const size = 200 * (2 - this.life);
-    ctx.font = `bold ${size}px Inter, sans-serif`;
+  update() { this.life -= 0.02; }
+  draw(ctx: CanvasRenderingContext2D) {
+    ctx.save(); ctx.globalAlpha = this.life * 0.3;
+    const size = 150 * (1.5 - this.life);
+    ctx.font = `600 ${size}px Inter, -apple-system, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (this.intensity > 0.4) {
-      ctx.fillStyle = '#ff0055'; ctx.fillText(this.char, this.x - (15 * this.intensity), this.y);
-      ctx.fillStyle = '#00f2ff'; ctx.fillText(this.char, this.x + (15 * this.intensity), this.y);
-    }
-    ctx.fillStyle = glitch ? '#000000' : this.color; ctx.fillText(this.char, this.x, this.y);
+    ctx.fillStyle = this.color; ctx.fillText(this.char, this.x, this.y);
     ctx.restore();
   }
 }
@@ -51,24 +45,19 @@ export default function KeyboardSynth() {
   const glyphsRef = useRef<Glyph[]>([]);
   const requestRef = useRef<number>(0);
   const mousePos = useRef({ x: -1000, y: -1000 });
-  const screenShake = useRef(0);
-  const gridWarp = useRef(0);
-  const keystrokes = useRef<number[]>([]);
   const intensity = useRef(0);
   const lyricImpact = useRef(0);
-  const chordStep = useRef(0);
   const activeKeys = useRef(new Set<string>());
   
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
   const [activeTrack, setActiveTrack] = useState<{title: string} | null>(null);
   const [isManuallyPlaying, setIsManuallyPlaying] = useState(false);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [showLyrics, setShowLyrics] = useState(true);
   const [lyricsLoading, setLyricsLoading] = useState(false);
-  const [countdown, setCountdown] = useState(10);
-  const [lyricSource, setLyricSource] = useState<string>('');
   const ytPlayer = useRef<any>(null);
 
   const initAudio = () => {
@@ -80,61 +69,37 @@ export default function KeyboardSynth() {
     if (activeTrack) return;
     initAudio();
     const ctx = audioCtxRef.current!;
-    chordStep.current++;
-    const progIndex = Math.floor(chordStep.current / 8) % PROGRESSION.length;
-    const rootFreq = SCALE[PROGRESSION[progIndex]];
-    const intervals = [1, 1.2, 1.5, 1.8, 2.2];
-    intervals.forEach((interval, i) => {
-      const osc = ctx.createOscillator(); const gain = ctx.createGain();
-      osc.type = intensity.current > 0.6 ? (Math.random() > 0.5 ? 'sawtooth' : 'square') : (i === 0 ? 'sawtooth' : 'sine');
-      osc.frequency.setValueAtTime(rootFreq * interval * (1 + (charCode % 12) / 12), ctx.currentTime);
-      const volume = (0.08 / (i + 1)) * (1.0 + intensity.current * 2);
-      gain.gain.setValueAtTime(volume, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 3.0);
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(); osc.stop(ctx.currentTime + 3.0);
-    });
+    const rootFreq = SCALE[charCode % SCALE.length];
+    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(rootFreq, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 1.5);
   };
 
   const spawnVisuals = (char: string, keyCode: number) => {
     const x = Math.random() * window.innerWidth;
     const y = Math.random() * window.innerHeight;
-    const palette = intensity.current > 0.4 ? COLORS_HOT : COLORS_CALM;
-    const color = palette[keyCode % palette.length];
-    glyphsRef.current.push(new Glyph(char, x, y, color, intensity.current));
-    for (let i = 0; i < 20 * (1 + intensity.current * 2); i++) {
-      particlesRef.current.push(new Particle(x, y, color, intensity.current));
-    }
-    screenShake.current = 20 * (1 + intensity.current * 2);
-    gridWarp.current = 150 * (1 + intensity.current);
-    lyricImpact.current = 1.0; // Trigger lyric pulse
+    const color = 'rgba(255, 255, 255, 0.8)';
+    glyphsRef.current.push(new Glyph(char, x, y, color));
+    for (let i = 0; i < 15; i++) particlesRef.current.push(new Particle(x, y, color, intensity.current));
+    intensity.current = Math.min(1.0, intensity.current + 0.1);
+    lyricImpact.current = 1.0;
   };
 
-  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number, isGlitch: boolean) => {
+  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     ctx.save();
-    ctx.strokeStyle = isGlitch ? 'rgba(0, 0, 0, 0.4)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.15)' : 'rgba(255, 255, 255, 0.05)');
-    ctx.lineWidth = 0.5 + intensity.current * 2;
-    const spacing = 80 - (intensity.current * 30);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.lineWidth = 1;
+    const spacing = 100;
     for (let x = 0; x <= width; x += spacing) {
-      ctx.beginPath();
-      for (let y = 0; y <= height; y += 25) {
-        const dMouse = Math.hypot(x - mousePos.current.x, y - mousePos.current.y);
-        const warp = (Math.exp(-dMouse / 150) * 50 + (Math.random() * gridWarp.current * 0.1)) * (1 + intensity.current);
-        ctx.lineTo(x + warp * (x - mousePos.current.x) / 150, y + warp * (y - mousePos.current.y) / 150);
-      }
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
     }
     for (let y = 0; y <= height; y += spacing) {
-      ctx.beginPath();
-      for (let x = 0; x <= width; x += 25) {
-        const dMouse = Math.hypot(x - mousePos.current.x, y - mousePos.current.y);
-        const warp = (Math.exp(-dMouse / 150) * 50 + (Math.random() * gridWarp.current * 0.1)) * (1 + intensity.current);
-        ctx.lineTo(x + warp * (x - mousePos.current.x) / 150, y + warp * (y - mousePos.current.y) / 150);
-      }
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
     }
     ctx.restore();
-    gridWarp.current *= 0.94;
   };
 
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
@@ -149,69 +114,42 @@ export default function KeyboardSynth() {
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
       const currentTime = ytPlayer.current.getCurrentTime();
-      let activeLyrics = lyrics;
+      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime < (line.start + line.dur));
 
-      if (!lyricSource.includes('SYNC')) {
-          const duration = ytPlayer.current.getDuration() || 210;
-          activeLyrics = lyrics.map((l, i) => ({ ...l, start: (duration / lyrics.length) * i, dur: (duration / lyrics.length) * 0.8 }));
-      }
+      if (currentLineIndex === -1) return;
 
-      const currentLineIndex = activeLyrics.findIndex(line => currentTime >= line.start && currentTime < (line.start + line.dur));
-
+      const text = lyrics[currentLineIndex].text.toUpperCase();
+      const maxWidth = width * 0.7;
+      
+      // APPLE-LEVEL KINETICS: PULSE BASED ON LYRIC DENSITY (Proxy for beat)
+      const lineLength = text.length;
+      const duration = lyrics[currentLineIndex].dur;
+      const energy = Math.min(1.5, (lineLength / duration) / 10); // Faster lines = more energy
+      
+      const pulse = Math.sin(Date.now() * 0.01 * (1 + energy)) * 0.02;
+      const scale = 1 + pulse + (lyricImpact.current * 0.1);
+      
       ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(scale, scale);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      
+      const baseSize = text.length > 40 ? 32 : 48;
+      ctx.font = `600 ${baseSize}px Inter, -apple-system, sans-serif`;
+      ctx.letterSpacing = '4px';
+      
+      const lines = wrapText(ctx, text, maxWidth);
+      const lineHeight = baseSize * 1.4;
+      const startY = -(lines.length * lineHeight) / 2 + lineHeight / 2;
 
-      if (currentLineIndex === -1) {
-          const nextIndex = activeLyrics.findIndex(line => line.start > currentTime);
-          if (nextIndex !== -1 && activeLyrics[nextIndex].start - currentTime < 5) {
-              ctx.font = 'italic 20px Inter, sans-serif'; ctx.fillStyle = 'white'; ctx.globalAlpha = 0.1;
-              ctx.fillText("READY: " + activeLyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
-          }
-      } else {
-          const text = activeLyrics[currentLineIndex].text.toUpperCase();
-          const impact = lyricImpact.current;
-          const pulse = Math.sin(Date.now() * 0.008) * 0.02; // Subtle heartbeat
-          const scale = 1 + (impact * 0.15) + pulse + (intensity.current * 0.05);
-          
-          ctx.translate(width / 2, height / 2);
-          
-          // SCREEN SHAKE ON LYRICS
-          if (impact > 0.1) {
-              ctx.translate((Math.random() - 0.5) * impact * 20, (Math.random() - 0.5) * impact * 20);
-          }
-          
-          ctx.scale(scale, scale);
-          
-          const opacity = 0.7 + impact * 0.3;
-          const maxWidth = width * 0.8;
-          const baseSize = text.length > 50 ? 40 : (text.length > 25 ? 54 : 72);
-          ctx.font = `bold ${baseSize}px Inter, sans-serif`;
-          ctx.letterSpacing = '10px';
-
-          const wrappedLines = wrapText(ctx, text, maxWidth);
-          const lineHeight = baseSize * 1.2;
-          const totalTextHeight = wrappedLines.length * lineHeight;
-          const startY = -(totalTextHeight / 2) + (lineHeight / 2);
-
-          wrappedLines.forEach((line, i) => {
-              const y = startY + (i * lineHeight);
-              
-              // CHROMATIC GLITCH
-              if (impact > 0.4 || intensity.current > 0.6) {
-                  const shift = (impact * 10) + (intensity.current * 15);
-                  ctx.globalAlpha = opacity * 0.4;
-                  ctx.fillStyle = '#ff0055'; ctx.fillText(line, -shift, y);
-                  ctx.fillStyle = '#00f2ff'; ctx.fillText(line, shift, y);
-              }
-              
-              ctx.globalAlpha = opacity;
-              ctx.fillStyle = 'white';
-              ctx.fillText(line, 0, y);
-          });
-      }
+      lines.forEach((line, i) => {
+          ctx.fillStyle = 'white';
+          ctx.globalAlpha = 0.9 + (pulse * 5);
+          ctx.fillText(line, 0, startY + (i * lineHeight));
+      });
       ctx.restore();
-      lyricImpact.current *= 0.92; // Decay the beat impact
+      lyricImpact.current *= 0.95;
   };
 
   const updatePlayback = useCallback(() => {
@@ -225,36 +163,15 @@ export default function KeyboardSynth() {
     }
   }, [isManuallyPlaying]);
 
-  useEffect(() => { updatePlayback(); }, [isManuallyPlaying, updatePlayback]);
-
-  useEffect(() => {
-      let timer: any;
-      if (isSearching && countdown > 0) timer = setInterval(() => setCountdown(prev => prev - 1), 1000);
-      else if (!isSearching) setCountdown(10);
-      return () => clearInterval(timer);
-  }, [isSearching, countdown]);
-
   const animate = () => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d'); if (!ctx) return;
-    const isGlitch = intensity.current > 0.9 && Math.random() > 0.8;
-    ctx.fillStyle = isGlitch ? 'white' : (intensity.current > 0.7 ? 'rgba(15, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.2)');
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    if (screenShake.current > 0) { ctx.translate((Math.random() - 0.5) * screenShake.current, (Math.random() - 0.5) * screenShake.current); screenShake.current *= 0.85; }
-    drawGrid(ctx, canvas.width, canvas.height, isGlitch);
+    ctx.fillStyle = 'black'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawGrid(ctx, canvas.width, canvas.height);
     drawLyrics(ctx, canvas.width, canvas.height);
-    ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
-    for (let i = 0; i < particlesRef.current.length; i++) {
-      for (let j = i + 1; j < Math.min(i + 5, particlesRef.current.length); j++) {
-        const p1 = particlesRef.current[i]; const p2 = particlesRef.current[j];
-        const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-        if (dist < 150) { ctx.globalAlpha = (1 - dist / 150) * p1.life * p2.life * 0.5; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
-      }
-    }
-    glyphsRef.current.forEach(g => { g.update(); g.draw(ctx, isGlitch); }); glyphsRef.current = glyphsRef.current.filter(g => g.life > 0);
+    glyphsRef.current.forEach(g => { g.update(); g.draw(ctx); }); glyphsRef.current = glyphsRef.current.filter(g => g.life > 0);
     particlesRef.current.forEach(p => { p.update(); p.draw(ctx); }); particlesRef.current = particlesRef.current.filter(p => p.life > 0);
-    ctx.restore(); intensity.current *= 0.992;
+    intensity.current *= 0.98;
     requestRef.current = requestAnimationFrame(animate);
   };
 
@@ -268,93 +185,90 @@ export default function KeyboardSynth() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showSearch) return;
       if (e.key === '/') { e.preventDefault(); setShowSearch(true); return; }
-      e.preventDefault(); activeKeys.current.add(e.code); updatePlayback();
       if (e.repeat) return;
-      const now = Date.now(); keystrokes.current.push(now);
-      keystrokes.current = keystrokes.current.filter(t => now - t < 4000);
-      intensity.current = Math.min(1.0, intensity.current + 0.08 + (keystrokes.current.length / 40));
+      activeKeys.current.add(e.code); updatePlayback();
       const charCode = e.key.toUpperCase().charCodeAt(0);
       if ((charCode >= 65 && charCode <= 90) || (charCode >= 48 && charCode <= 57)) { playChord(charCode); spawnVisuals(e.key.toUpperCase(), charCode); }
     };
     const handleKeyUp = (e: KeyboardEvent) => { activeKeys.current.delete(e.code); updatePlayback(); };
-    const handleMouseMove = (e: MouseEvent) => { mousePos.current = { x: e.clientX, y: e.clientY }; };
-    window.addEventListener('resize', handleResize); window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('resize', handleResize); window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
     handleResize(); requestRef.current = requestAnimationFrame(animate);
     return () => {
-      window.removeEventListener('resize', handleResize); window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('resize', handleResize); window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
   }, [showSearch, updatePlayback]);
 
   const handleSearch = async (e: React.FormEvent) => {
       e.preventDefault(); if (!searchQuery.trim()) return;
-      setIsSearching(true); setCountdown(10);
+      setLoadingStep("Searching"); setProgress(20);
       try {
           const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
           const data = await res.json();
           if (data.videoId && ytPlayer.current) {
+              setLoadingStep("Loading Lyrics"); setProgress(60);
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
-              const cleanTitle = data.title.replace(/\(Official.*?\)/gi, '').replace(/\[Official.*?\]/gi, '').replace(/- YouTube/gi, '').replace(/4K/gi, '').replace(/Music Video/gi, '').trim();
+              const cleanTitle = data.title.replace(/\(Official.*?\)/gi, '').replace(/\[Official.*?\]/gi, '').trim();
               setActiveTrack({ title: cleanTitle });
-              setLyrics([]); setLyricsLoading(true);
               const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}&title=${encodeURIComponent(cleanTitle)}`);
               const lyrData = await lyrRes.json();
               setLyrics(lyrData.lyrics || []);
-              setLyricSource(lyrData.source || 'NOT_FOUND');
-              setLyricsLoading(false);
+              setLoadingStep("Syncing"); setProgress(90);
+              setTimeout(() => { setLoadingStep(null); setShowSearch(false); setSearchQuery(''); setProgress(0); }, 500);
           }
-      } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
+      } catch (err) { setLoadingStep(null); }
   };
 
   return (
     <>
-      <canvas ref={canvasRef} className="fixed inset-0 w-full h-full bg-black touch-none" style={{ cursor: 'auto' }} id="clacktave-canvas" />
+      <canvas ref={canvasRef} className="fixed inset-0 w-full h-full bg-black" />
       <div id="yt-player" className="hidden" />
       
       {showSearch && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-3xl">
-            <form onSubmit={handleSearch} className="w-full max-w-2xl px-8 text-center">
-                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "PENETRATING SERVERS..." : "INITIATE SEARCH..."} className="w-full bg-transparent border-b-2 border-white text-white text-6xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
-                <p className="mt-10 text-white/30 font-mono text-xs tracking-[0.8em] uppercase">
-                    {isSearching ? `ESTABLISHING CONNECTION... 00:00:${countdown < 10 ? '0'+countdown : countdown}` : "ESC TO ABORT • ENTER TO CONFIRM"}
-                </p>
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md">
+            <form onSubmit={handleSearch} className="w-full max-w-xl px-12">
+                <input autoFocus disabled={loadingStep !== null} type="text" placeholder="Search a song..." className="w-full bg-transparent text-white text-4xl font-light tracking-tight focus:outline-none placeholder:text-white/20 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
+                {loadingStep && (
+                    <div className="mt-12 flex flex-col items-center gap-4">
+                        <div className="w-48 h-[1px] bg-white/10 overflow-hidden relative">
+                            <div className="absolute inset-0 bg-white transition-all duration-500 ease-out" style={{ width: `${progress}%` }} />
+                        </div>
+                        <p className="text-white/40 font-light text-xs tracking-widest uppercase">{loadingStep}</p>
+                    </div>
+                )}
             </form>
         </div>
       )}
 
       {activeTrack && !showSearch && (
-          <div className="fixed bottom-12 left-12 z-[500] flex items-end gap-12">
-              <div className="flex flex-col gap-6">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 hover:border-white/30 transition-all cursor-pointer group" onClick={() => setIsManuallyPlaying(!isManuallyPlaying)}>
-                        {isManuallyPlaying ? (
-                            <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-                        ) : (
-                            <svg className="w-5 h-5 text-white fill-current translate-x-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                        )}
-                    </div>
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all cursor-pointer ${showLyrics ? 'bg-white/10 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/10 hover:border-white/30'}`} onClick={() => setShowLyrics(!showLyrics)}>
-                        <svg className={`w-5 h-5 ${showLyrics ? 'text-white' : 'text-white/40'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 7h8" /><path d="M8 11h8" /></svg>
-                    </div>
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 hover:border-white/30 transition-all cursor-pointer" onClick={() => setShowSearch(true)}>
-                        <svg className="w-5 h-5 text-white/40 group-hover:text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                    </div>
-                </div>
-
-                <div className="font-mono text-xs">
-                    <p className="text-white/20 uppercase tracking-[0.5em] mb-1">
-                        {lyricsLoading ? "DECRYPTING_DATA" : `STREAM_ID: ${lyricSource}`}
-                    </p>
-                    <h2 className="text-white text-lg uppercase tracking-tighter max-w-sm overflow-hidden whitespace-nowrap text-ellipsis">{activeTrack.title}</h2>
-                </div>
+          <div className="fixed bottom-12 left-12 z-[500] flex items-center gap-8">
+              <div className="flex items-center gap-3 bg-white/5 backdrop-blur-2xl border border-white/10 p-2 rounded-2xl shadow-2xl">
+                  <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors">
+                      {isManuallyPlaying ? (
+                          <svg className="w-4 h-4 text-white fill-current" viewBox="0 0 24 24"><rect x="6" y="4" width="3" height="16" rx="1" /><rect x="15" y="4" width="3" height="16" rx="1" /></svg>
+                      ) : (
+                          <svg className="w-4 h-4 text-white fill-current translate-x-0.5" viewBox="0 0 24 24"><path d="M7 6v12l10-6z" /></svg>
+                      )}
+                  </button>
+                  <div className="w-[1px] h-4 bg-white/10" />
+                  <button onClick={() => setShowLyrics(!showLyrics)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${showLyrics ? 'bg-white text-black' : 'text-white/40 hover:bg-white/10'}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                  </button>
+                  <button onClick={() => setShowSearch(true)} className="w-10 h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                  </button>
+              </div>
+              <div className="flex flex-col">
+                  <p className="text-white font-medium tracking-tight text-sm mb-0.5">{activeTrack.title}</p>
+                  <p className="text-white/30 text-[10px] font-medium tracking-widest uppercase">System Ready</p>
               </div>
           </div>
       )}
 
       {!showSearch && !activeTrack && (
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-              <p className="text-white/10 font-mono text-xs tracking-[1em] uppercase animate-pulse">PRESS [/] TO INITIATE SYSTEM</p>
+              <p className="text-white/20 font-light text-xs tracking-[0.8em] uppercase">Press [/] to search</p>
           </div>
       )}
     </>
