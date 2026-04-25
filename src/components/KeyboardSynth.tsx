@@ -68,6 +68,7 @@ export default function KeyboardSynth() {
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [lyricSource, setLyricSource] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const ytPlayer = useRef<any>(null);
 
   const initAudio = () => {
@@ -136,8 +137,20 @@ export default function KeyboardSynth() {
   };
 
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
+      if (!showLyrics || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
       
+      if (lyrics.length === 0) {
+          if (!lyricsLoading && activeTrack) {
+              ctx.save();
+              ctx.font = 'bold 24px Inter, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillStyle = 'rgba(255,255,255,0.2)';
+              ctx.fillText("LYRICS UNAVAILABLE FOR THIS TRACK", width / 2, height / 2);
+              ctx.restore();
+          }
+          return;
+      }
+
       const currentTime = ytPlayer.current.getCurrentTime();
       const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
 
@@ -155,17 +168,17 @@ export default function KeyboardSynth() {
           }
       } else {
           const text = lyrics[currentLineIndex].text.toUpperCase();
-          const opacity = 0.6 + intensity.current * 0.4;
-          ctx.font = 'bold 64px Inter, sans-serif';
-          ctx.letterSpacing = '8px';
+          const opacity = 0.7 + intensity.current * 0.3;
+          ctx.font = 'bold 72px Inter, sans-serif';
+          ctx.letterSpacing = '10px';
           if (intensity.current > 0.4) {
-              ctx.globalAlpha = opacity * 0.3; ctx.fillStyle = '#ff0055'; ctx.fillText(text, width / 2 - 4, height / 2);
-              ctx.globalAlpha = opacity * 0.3; ctx.fillStyle = '#00f2ff'; ctx.fillText(text, width / 2 + 4, height / 2);
+              ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#ff0055'; ctx.fillText(text, width / 2 - 6, height / 2);
+              ctx.globalAlpha = opacity * 0.4; ctx.fillStyle = '#00f2ff'; ctx.fillText(text, width / 2 + 6, height / 2);
           }
           ctx.globalAlpha = opacity; ctx.fillStyle = 'white'; ctx.fillText(text, width / 2, height / 2);
-          ctx.font = '28px Inter, sans-serif'; ctx.globalAlpha = 0.1;
-          if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 100);
-          if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 100);
+          ctx.font = '32px Inter, sans-serif'; ctx.globalAlpha = 0.1;
+          if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 120);
+          if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 120);
       }
       ctx.restore();
   };
@@ -181,18 +194,12 @@ export default function KeyboardSynth() {
     }
   }, [isManuallyPlaying]);
 
-  useEffect(() => {
-    updatePlayback();
-  }, [isManuallyPlaying, updatePlayback]);
+  useEffect(() => { updatePlayback(); }, [isManuallyPlaying, updatePlayback]);
 
-  // Countdown logic
   useEffect(() => {
       let timer: any;
-      if (isSearching && countdown > 0) {
-          timer = setInterval(() => setCountdown(prev => prev - 1), 1000);
-      } else if (!isSearching) {
-          setCountdown(10);
-      }
+      if (isSearching && countdown > 0) timer = setInterval(() => setCountdown(prev => prev - 1), 1000);
+      else if (!isSearching) setCountdown(10);
       return () => clearInterval(timer);
   }, [isSearching, countdown]);
 
@@ -203,10 +210,7 @@ export default function KeyboardSynth() {
     ctx.fillStyle = isGlitch ? 'white' : (intensity.current > 0.7 ? 'rgba(15, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.2)');
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    if (screenShake.current > 0) {
-      ctx.translate((Math.random() - 0.5) * screenShake.current, (Math.random() - 0.5) * screenShake.current);
-      screenShake.current *= 0.85;
-    }
+    if (screenShake.current > 0) { ctx.translate((Math.random() - 0.5) * screenShake.current, (Math.random() - 0.5) * screenShake.current); screenShake.current *= 0.85; }
     drawGrid(ctx, canvas.width, canvas.height, isGlitch);
     drawLyrics(ctx, canvas.width, canvas.height);
     ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
@@ -214,31 +218,20 @@ export default function KeyboardSynth() {
       for (let j = i + 1; j < Math.min(i + 5, particlesRef.current.length); j++) {
         const p1 = particlesRef.current[i]; const p2 = particlesRef.current[j];
         const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-        if (dist < 150) {
-          ctx.globalAlpha = (1 - dist / 150) * p1.life * p2.life * 0.5;
-          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-        }
+        if (dist < 150) { ctx.globalAlpha = (1 - dist / 150) * p1.life * p2.life * 0.5; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
       }
     }
-    glyphsRef.current.forEach(g => { g.update(); g.draw(ctx, isGlitch); });
-    glyphsRef.current = glyphsRef.current.filter(g => g.life > 0);
-    particlesRef.current.forEach(p => { p.update(); p.draw(ctx); });
-    particlesRef.current = particlesRef.current.filter(p => p.life > 0);
-    ctx.restore();
-    intensity.current *= 0.992;
+    glyphsRef.current.forEach(g => { g.update(); g.draw(ctx, isGlitch); }); glyphsRef.current = glyphsRef.current.filter(g => g.life > 0);
+    particlesRef.current.forEach(p => { p.update(); p.draw(ctx); }); particlesRef.current = particlesRef.current.filter(p => p.life > 0);
+    ctx.restore(); intensity.current *= 0.992;
     requestRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = document.getElementsByTagName('script')[0]; firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
     (window as any).onYouTubeIframeAPIReady = () => {
-        ytPlayer.current = new (window as any).YT.Player('yt-player', {
-            height: '0', width: '0', videoId: 'dQw4w9WgXcQ',
-            events: { 'onReady': (event: any) => event.target.setVolume(0) }
-        });
+        ytPlayer.current = new (window as any).YT.Player('yt-player', { height: '0', width: '0', videoId: 'dQw4w9WgXcQ', events: { 'onReady': (event: any) => event.target.setVolume(0) } });
     };
     const handleResize = () => { if (canvasRef.current) { canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; } };
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -250,9 +243,7 @@ export default function KeyboardSynth() {
       keystrokes.current = keystrokes.current.filter(t => now - t < 4000);
       intensity.current = Math.min(1.0, intensity.current + 0.08 + (keystrokes.current.length / 40));
       const charCode = e.key.toUpperCase().charCodeAt(0);
-      if ((charCode >= 65 && charCode <= 90) || (charCode >= 48 && charCode <= 57)) {
-        playChord(charCode); spawnVisuals(e.key.toUpperCase(), charCode);
-      }
+      if ((charCode >= 65 && charCode <= 90) || (charCode >= 48 && charCode <= 57)) { playChord(charCode); spawnVisuals(e.key.toUpperCase(), charCode); }
     };
     const handleKeyUp = (e: KeyboardEvent) => { activeKeys.current.delete(e.code); updatePlayback(); };
     const handleMouseMove = (e: MouseEvent) => { mousePos.current = { x: e.clientX, y: e.clientY }; };
@@ -266,23 +257,23 @@ export default function KeyboardSynth() {
 
   const handleSearch = async (e: React.FormEvent) => {
       e.preventDefault(); if (!searchQuery.trim()) return;
-      setIsSearching(true); setCountdown(10);
+      setIsSearching(true); setCountdown(10); setErrorMsg(null);
       try {
           const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
           const data = await res.json();
           if (data.videoId && ytPlayer.current) {
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
-              const cleanTitle = data.title.replace(/\(Official.*?\)/gi, '').replace(/\[Official.*?\]/gi, '').replace(/- YouTube/gi, '').trim();
+              const cleanTitle = data.title.replace(/\(Official.*?\)/gi, '').replace(/\[Official.*?\]/gi, '').replace(/- YouTube/gi, '').replace(/4K/gi, '').replace(/Music Video/gi, '').trim();
               setActiveTrack({ title: cleanTitle });
               setLyrics([]); setLyricsLoading(true);
               const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}&title=${encodeURIComponent(cleanTitle)}`);
               const lyrData = await lyrRes.json();
               setLyrics(lyrData.lyrics || []);
-              setLyricSource(lyrData.source || 'NONE');
+              setLyricSource(lyrData.source || 'NOT_FOUND');
               setLyricsLoading(false);
           }
-      } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
+      } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); setErrorMsg("NETWORK ERROR"); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
   };
 
   return (
@@ -290,11 +281,11 @@ export default function KeyboardSynth() {
       <canvas ref={canvasRef} className="fixed inset-0 w-full h-full bg-black touch-none" style={{ cursor: 'auto' }} id="clacktave-canvas" />
       <div id="yt-player" className="hidden" />
       {showSearch && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-xl">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-3xl">
             <form onSubmit={handleSearch} className="w-full max-w-2xl px-8 text-center">
-                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "INFILTRATING DATABASE..." : "ENTER SONG NAME..."} className="w-full bg-transparent border-b-2 border-white text-white text-5xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
-                <p className="mt-8 text-white/30 font-mono text-sm tracking-[0.5em] uppercase">
-                    {isSearching ? `ESTABLISHING CONNECTION... ${countdown}S` : "ESC TO DISMISS • ENTER TO INITIATE"}
+                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "PENETRATING SERVERS..." : "SEARCH ANY SONG..."} className="w-full bg-transparent border-b-2 border-white text-white text-6xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
+                <p className="mt-10 text-white/30 font-mono text-xs tracking-[0.8em] uppercase">
+                    {isSearching ? `ESTABLISHING CONNECTION... 00:00:${countdown < 10 ? '0'+countdown : countdown}` : "ESC TO DISMISS • ENTER TO INITIATE"}
                 </p>
             </form>
         </div>
@@ -302,22 +293,22 @@ export default function KeyboardSynth() {
       {activeTrack && !showSearch && (
           <div className="fixed bottom-12 left-12 z-[500] font-mono">
               <div className="flex items-center gap-4 mb-2">
-                <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
-                    {lyricsLoading ? "SYNCHRONIZING..." : lyrics.length > 0 ? `SYSTEM ACTIVE // SOURCE: ${lyricSource}` : "DATA ENCRYPTION DETECTED"}
+                <p className="text-white/20 text-[10px] uppercase tracking-[0.4em]">
+                    {lyricsLoading ? "DECRYPTING_LYRICS..." : `SYSTEM_READY // SRC_${lyricSource}`}
                 </p>
                 <div className="flex gap-2">
-                    <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
-                        {isManuallyPlaying ? "MANUAL: ON" : "MANUAL: OFF"}
+                    <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-2 py-0.5 border border-white/10 transition-colors uppercase">
+                        MANUAL_{isManuallyPlaying ? "ON" : "OFF"}
                     </button>
-                    <button onClick={() => setShowLyrics(!showLyrics)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
-                        {showLyrics ? "LYRICS: ON" : "LYRICS: OFF"}
+                    <button onClick={() => setShowLyrics(!showLyrics)} className="text-[10px] bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-2 py-0.5 border border-white/10 transition-colors uppercase">
+                        LYRICS_{showLyrics ? "ON" : "OFF"}
                     </button>
                 </div>
               </div>
               <h2 className="text-white text-xl uppercase tracking-tighter max-w-md">{activeTrack.title}</h2>
               <div className="mt-4 flex gap-1">
                   {[...Array(4)].map((_, i) => (
-                      <div key={i} className="w-1 h-4 bg-white/40 animate-bounce" style={{ animationDelay: `${i * 0.1}s`, animationPlayState: (activeKeys.current.size > 0 || isManuallyPlaying) ? 'running' : 'paused' }} />
+                      <div key={i} className="w-1 h-4 bg-white/20 animate-bounce" style={{ animationDelay: `${i * 0.1}s`, animationPlayState: (activeKeys.current.size > 0 || isManuallyPlaying) ? 'running' : 'paused' }} />
                   ))}
               </div>
           </div>
