@@ -18,7 +18,6 @@ export async function GET(request: Request) {
       
       if (match) {
         const tracks = JSON.parse(match[1]);
-        // Priority: Manual English -> Auto-generated English -> Any English
         const track = tracks.find((t: any) => t.vssId === '.en') || 
                       tracks.find((t: any) => t.vssId === 'a.en') ||
                       tracks.find((t: any) => t.languageCode.startsWith('en')) || 
@@ -29,28 +28,21 @@ export async function GET(request: Request) {
           const captionData = await captionRes.json();
           
           if (captionData.events) {
-            // ROLLING BUFFER PARSER
-            let lastText = "";
             captions = captionData.events
               .filter((ev: any) => ev.segs && ev.tStartMs !== undefined)
               .map((ev: any) => {
-                const text = ev.segs.map((s: any) => s.utf8).join('').trim();
-                if (!text || text === lastText) return null;
-                lastText = text;
+                const words = ev.segs.map((s: any) => ({
+                    text: s.utf8,
+                    offset: (s.tOffsetMs || 0) / 1000
+                }));
                 return {
                   start: ev.tStartMs / 1000,
-                  // Auto-captions don't have reliable durations, 
-                  // we calculate them as the distance to the NEXT event
-                  text: text
+                  dur: ev.dDurationMs ? ev.dDurationMs / 1000 : 3,
+                  text: words.map((w: any) => w.text).join('').trim(),
+                  words: words // Individual word timing for 10/10 highlighting
                 };
               })
-              .filter(Boolean);
-
-            // Calculate exact durations based on subsequent event starts
-            captions = captions.map((c: any, i: number) => ({
-              ...c,
-              dur: i < captions.length - 1 ? Math.min(captions[i+1].start - c.start, 5) : 3
-            }));
+              .filter((c: any) => c.text.length > 0);
 
             source = track.vssId === 'a.en' ? 'YOUTUBE_AUTO_SYNC' : 'YOUTUBE_MANUAL_SYNC';
           }
@@ -59,21 +51,21 @@ export async function GET(request: Request) {
     } catch (e) {}
   }
 
-  // FALLBACK: LRCLib (Highly synced)
+  // FALLBACK: LRCLib
   if (captions.length === 0 && title) {
       try {
           const lrcRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(title)}`);
           const lrcData = await lrcRes.json();
           if (lrcData && lrcData.length > 0 && lrcData[0].syncedLyrics) {
-              const lrcLines = lrcData[0].syncedLyrics.split('\n');
-              const parsed = lrcLines.map((line: string) => {
+              const parsed = lrcData[0].syncedLyrics.split('\n').map((line: string) => {
                   const match = line.match(/\[(\d+):(\d+\.\d+)\](.*)/);
                   if (match) return { start: parseInt(match[1]) * 60 + parseFloat(match[2]), text: match[3].trim() };
                   return null;
               }).filter(Boolean);
               captions = parsed.map((line: any, i: number) => ({
                   ...line,
-                  dur: i < parsed.length - 1 ? (parsed[i+1].start - line.start) : 5
+                  dur: i < parsed.length - 1 ? (parsed[i+1].start - line.start) : 5,
+                  words: [{ text: line.text, offset: 0 }]
               }));
               source = 'LRC_LIB_SYNC';
           }

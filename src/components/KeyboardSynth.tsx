@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 const SCALE = [130.81, 146.83, 155.56, 174.61, 196.00, 207.65, 233.08, 261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16, 523.25];
-const PROGRESSION = [0, 5, 6, 4];
 
 class Particle {
   x: number; y: number; vx: number; vy: number; size: number; color: string; life: number; decay: number;
@@ -44,9 +43,9 @@ export default function KeyboardSynth() {
   const particlesRef = useRef<Particle[]>([]);
   const glyphsRef = useRef<Glyph[]>([]);
   const requestRef = useRef<number>(0);
-  const mousePos = useRef({ x: -1000, y: -1000 });
   const intensity = useRef(0);
   const lyricImpact = useRef(0);
+  const scrollPos = useRef(0);
   const activeKeys = useRef(new Set<string>());
   
   const [showSearch, setShowSearch] = useState(false);
@@ -102,52 +101,69 @@ export default function KeyboardSynth() {
     ctx.restore();
   };
 
-  const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
-      const words = text.split(' '); const lines = []; let currentLine = words[0];
-      for (let i = 1; i < words.length; i++) {
-          const word = words[i]; const width = ctx.measureText(currentLine + " " + word).width;
-          if (width < maxWidth) currentLine += " " + word; else { lines.push(currentLine); currentLine = word; }
-      }
-      lines.push(currentLine); return lines;
-  };
-
   const drawLyrics = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
+      
       const currentTime = ytPlayer.current.getCurrentTime();
+      const currentIndex = lyrics.findIndex(l => currentTime >= l.start && currentTime < (l.start + l.dur));
       
-      // STRICT SINGLE-LINE SELECTION TO PREVENT OVERLAP
-      const currentLine = lyrics.find(line => currentTime >= line.start && currentTime < (line.start + line.dur));
-      if (!currentLine) return;
+      // SMOOTH SCROLLING ENGINE
+      const targetScroll = currentIndex === -1 ? scrollPos.current : currentIndex;
+      scrollPos.current += (targetScroll - scrollPos.current) * 0.1;
 
-      const text = currentLine.text.toUpperCase();
-      const maxWidth = width * 0.7;
-      
-      const lineLength = text.length;
-      const energy = Math.min(1.5, (lineLength / currentLine.dur) / 10);
-      const pulse = Math.sin(Date.now() * 0.01 * (1 + energy)) * 0.02;
-      const scale = 1 + pulse + (lyricImpact.current * 0.1);
-      
       ctx.save();
-      ctx.translate(width / 2, height / 2);
-      ctx.scale(scale, scale);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      const baseSize = text.length > 50 ? 32 : 48;
-      ctx.font = `600 ${baseSize}px Inter, -apple-system, sans-serif`;
-      ctx.letterSpacing = '4px';
+      const lineHeight = 80;
+      const centerY = height / 2;
       
-      const lines = wrapText(ctx, text, maxWidth);
-      const lineHeight = baseSize * 1.6; // INCREASED LINE HEIGHT FOR CLARITY
-      const startY = -(lines.length * lineHeight) / 2 + lineHeight / 2;
+      // Draw a window of lines around the current one
+      const windowSize = 3;
+      const startLine = Math.max(0, Math.floor(scrollPos.current - windowSize));
+      const endLine = Math.min(lyrics.length - 1, Math.ceil(scrollPos.current + windowSize));
 
-      lines.forEach((line, i) => {
-          ctx.fillStyle = 'white';
-          ctx.globalAlpha = 1.0; // FULL OPACITY FOR CLARITY
-          ctx.fillText(line, 0, startY + (i * lineHeight));
-      });
+      for (let i = startLine; i <= endLine; i++) {
+          const line = lyrics[i];
+          const yOffset = (i - scrollPos.current) * lineHeight;
+          const y = centerY + yOffset;
+          
+          const distance = Math.abs(i - scrollPos.current);
+          const opacity = Math.max(0, 1 - distance * 0.6);
+          const scale = 1 - distance * 0.1;
+          
+          if (opacity <= 0) continue;
+
+          ctx.save();
+          ctx.translate(width / 2, y);
+          ctx.scale(scale, scale);
+          
+          const isActive = i === currentIndex;
+          const baseSize = isActive ? 48 : 32;
+          ctx.font = `600 ${baseSize}px Inter, -apple-system, sans-serif`;
+          ctx.letterSpacing = isActive ? '2px' : '4px';
+
+          if (isActive && line.words) {
+              // KARAOKE WORD-LEVEL HIGHLIGHTING
+              let currentX = -ctx.measureText(line.text.toUpperCase()).width / 2;
+              line.words.forEach((word: any) => {
+                  const wordText = word.text.toUpperCase();
+                  const wordWidth = ctx.measureText(wordText).width;
+                  const isWordActive = (currentTime - line.start) >= word.offset;
+                  
+                  ctx.globalAlpha = isWordActive ? 1.0 : 0.2;
+                  ctx.fillStyle = isWordActive ? 'white' : 'rgba(255, 255, 255, 0.5)';
+                  ctx.fillText(wordText, currentX + wordWidth / 2, 0);
+                  currentX += wordWidth;
+              });
+          } else {
+              ctx.globalAlpha = opacity * 0.3;
+              ctx.fillStyle = 'white';
+              ctx.fillText(line.text.toUpperCase(), 0, 0);
+          }
+          ctx.restore();
+      }
       ctx.restore();
-      lyricImpact.current *= 0.95;
   };
 
   const updatePlayback = useCallback(() => {
