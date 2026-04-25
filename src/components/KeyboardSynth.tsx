@@ -70,8 +70,6 @@ class Glyph {
     ctx.font = `bold ${200 * (2 - this.life)}px Inter, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
-    // Chromatic Aberration Effect
     ctx.fillStyle = '#ff0055';
     ctx.fillText(this.char, this.x - 5, this.y);
     ctx.fillStyle = '#00f2ff';
@@ -89,7 +87,9 @@ export default function KeyboardSynth() {
   const glyphsRef = useRef<Glyph[]>([]);
   const requestRef = useRef<number>(0);
   const mouseDroneRef = useRef<{ osc: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null>(null);
+  const mousePos = useRef({ x: -1000, y: -1000 });
   const screenShake = useRef(0);
+  const gridWarp = useRef(0);
 
   const initMouseDrone = () => {
     if (!audioCtxRef.current) {
@@ -113,23 +113,16 @@ export default function KeyboardSynth() {
   const playChord = (frequency: number) => {
     if (!audioCtxRef.current) initMouseDrone();
     const ctx = audioCtxRef.current!;
-    
-    // Generative Harmony: Minor 9th / Major 7th based on frequency
     const isHigh = frequency > 300;
     const intervals = isHigh ? [1, 1.25, 1.5, 1.875, 2.25] : [1, 1.2, 1.5, 1.75, 2.2];
-
     intervals.forEach((interval, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      
       osc.type = i === 0 ? 'sawtooth' : 'sine';
       osc.frequency.setValueAtTime(frequency * interval, ctx.currentTime);
-      
-      // Dynamic velocity per harmonic
       const volume = (0.1 / (i + 1)) * (1.0 - (i * 0.1));
       gain.gain.setValueAtTime(volume, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.5);
-      
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
@@ -141,12 +134,42 @@ export default function KeyboardSynth() {
     const x = Math.random() * window.innerWidth;
     const y = Math.random() * window.innerHeight;
     const color = COLORS[keyCode % COLORS.length];
-
     glyphsRef.current.push(new Glyph(char, x, y, color));
     for (let i = 0; i < 15; i++) {
       particlesRef.current.push(new Particle(x, y, color));
     }
     screenShake.current = 15;
+    gridWarp.current = 100;
+  };
+
+  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.lineWidth = 0.5;
+    const spacing = 80;
+    
+    // Vertical lines
+    for (let x = 0; x <= width; x += spacing) {
+      ctx.beginPath();
+      for (let y = 0; y <= height; y += 20) {
+        const dMouse = Math.hypot(x - mousePos.current.x, y - mousePos.current.y);
+        const warp = Math.exp(-dMouse / 150) * 40 + (Math.random() * gridWarp.current * 0.1);
+        ctx.lineTo(x + warp * (x - mousePos.current.x) / 150, y + warp * (y - mousePos.current.y) / 150);
+      }
+      ctx.stroke();
+    }
+    // Horizontal lines
+    for (let y = 0; y <= height; y += spacing) {
+      ctx.beginPath();
+      for (let x = 0; x <= width; x += 20) {
+        const dMouse = Math.hypot(x - mousePos.current.x, y - mousePos.current.y);
+        const warp = Math.exp(-dMouse / 150) * 40 + (Math.random() * gridWarp.current * 0.1);
+        ctx.lineTo(x + warp * (x - mousePos.current.x) / 150, y + warp * (y - mousePos.current.y) / 150);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    gridWarp.current *= 0.95;
   };
 
   const animate = () => {
@@ -155,8 +178,7 @@ export default function KeyboardSynth() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Background fade with silky trails
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+    ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
@@ -165,7 +187,9 @@ export default function KeyboardSynth() {
       screenShake.current *= 0.9;
     }
 
-    // Draw Neural Network Lines
+    drawGrid(ctx, canvas.width, canvas.height);
+
+    // Draw Lines
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 0.5;
     for (let i = 0; i < particlesRef.current.length; i++) {
@@ -175,27 +199,17 @@ export default function KeyboardSynth() {
         const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
         if (dist < 150) {
           ctx.globalAlpha = (1 - dist / 150) * p1.life * p2.life * 0.5;
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
         }
       }
     }
 
-    // Update & Draw Glyphs
     for (let i = glyphsRef.current.length - 1; i >= 0; i--) {
-      const g = glyphsRef.current[i];
-      g.update();
-      g.draw(ctx);
+      const g = glyphsRef.current[i]; g.update(); g.draw(ctx);
       if (g.life <= 0) glyphsRef.current.splice(i, 1);
     }
-
-    // Update & Draw Particles
     for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-      const p = particlesRef.current[i];
-      p.update();
-      p.draw(ctx);
+      const p = particlesRef.current[i]; p.update(); p.draw(ctx);
       if (p.life <= 0) particlesRef.current.splice(i, 1);
     }
 
@@ -210,7 +224,6 @@ export default function KeyboardSynth() {
         canvasRef.current.height = window.innerHeight;
       }
     };
-
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       if (e.repeat) return;
@@ -220,8 +233,8 @@ export default function KeyboardSynth() {
         spawnVisuals(e.key.toUpperCase(), charCode);
       }
     };
-
     const handleMouseMove = (e: MouseEvent) => {
+      mousePos.current = { x: e.clientX, y: e.clientY };
       if (!mouseDroneRef.current) initMouseDrone();
       const drone = mouseDroneRef.current;
       const ctx = audioCtxRef.current;
@@ -236,13 +249,11 @@ export default function KeyboardSynth() {
         if (audioCtxRef.current) drone.gain.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.3);
       }, 100);
     };
-
     window.addEventListener('resize', handleResize);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('mousemove', handleMouseMove);
     handleResize();
     requestRef.current = requestAnimationFrame(animate);
-
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
