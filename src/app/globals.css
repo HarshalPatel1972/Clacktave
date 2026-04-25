@@ -22,11 +22,17 @@ body {
 }
 
 .studio-btn {
-  @apply transition-all duration-100 active:scale-95;
+  transition: all 0.1s ease;
+}
+
+.studio-btn:active {
+  transform: scale(0.95);
 }
 
 .studio-btn-active {
-  @apply bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.4)];
+  background-color: #ffffff;
+  color: #000000;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
 }
 
 /* ZERO-LATENCY ENTRANCE */
