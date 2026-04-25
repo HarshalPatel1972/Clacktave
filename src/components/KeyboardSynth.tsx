@@ -63,7 +63,7 @@ export default function KeyboardSynth() {
   const [isSearching, setIsSearching] = useState(false);
   const [activeTrack, setActiveTrack] = useState<{title: string} | null>(null);
   const [isManuallyPlaying, setIsManuallyPlaying] = useState(false);
-  const [lyrics, setLyrics] = useState<string[]>([]);
+  const [lyrics, setLyrics] = useState<any[]>([]);
   const [showLyrics, setShowLyrics] = useState(true);
   const ytPlayer = useRef<any>(null);
 
@@ -136,29 +136,44 @@ export default function KeyboardSynth() {
       if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
       
       const currentTime = ytPlayer.current.getCurrentTime();
-      const duration = ytPlayer.current.getDuration();
-      if (!duration) return;
+      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.5));
 
-      const progress = currentTime / duration;
-      const totalLines = lyrics.length;
-      const currentLineIndex = Math.floor(progress * totalLines);
+      if (currentLineIndex === -1) {
+          // If no active line, find the closest upcoming one
+          const nextIndex = lyrics.findIndex(line => line.start > currentTime);
+          if (nextIndex === -1) return;
+          
+          ctx.save();
+          ctx.font = 'italic 20px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = 'white';
+          ctx.globalAlpha = 0.1;
+          ctx.fillText("UPCOMING: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 100);
+          ctx.restore();
+          return;
+      }
 
       ctx.save();
-      ctx.font = 'bold 40px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.letterSpacing = '10px';
 
-      // Draw 3 lines (previous, current, next)
-      for (let i = -1; i <= 1; i++) {
-          const index = currentLineIndex + i;
-          if (index >= 0 && index < totalLines) {
-              const opacity = (1 - Math.abs(i) * 0.7) * (0.1 + intensity.current * 0.4);
-              ctx.globalAlpha = opacity;
-              ctx.fillStyle = 'white';
-              ctx.fillText(lyrics[index].toUpperCase(), width / 2, height / 2 + (i * 60));
-          }
+      // Current Line
+      ctx.font = 'bold 50px Inter, sans-serif';
+      ctx.letterSpacing = '5px';
+      ctx.globalAlpha = 0.2 + intensity.current * 0.6;
+      ctx.fillStyle = 'white';
+      ctx.fillText(lyrics[currentLineIndex].text.toUpperCase(), width / 2, height / 2);
+
+      // Previous and Next Lines
+      ctx.font = '30px Inter, sans-serif';
+      ctx.globalAlpha = 0.05 + intensity.current * 0.1;
+      if (currentLineIndex > 0) {
+          ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 80);
       }
+      if (currentLineIndex < lyrics.length - 1) {
+          ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 80);
+      }
+      
       ctx.restore();
   };
 
@@ -258,8 +273,8 @@ export default function KeyboardSynth() {
               ytPlayer.current.pauseVideo();
               setActiveTrack({ title: data.title });
               
-              // Fetch lyrics simultaneously
-              const lyrRes = await fetch(`/api/lyrics?title=${encodeURIComponent(data.title)}`);
+              // Fetch Synced Captions
+              const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}`);
               const lyrData = await lyrRes.json();
               setLyrics(lyrData.lyrics || []);
           }

@@ -1,37 +1,31 @@
 import { NextResponse } from 'next/server';
-const lyricsFinder = require('lyrics-finder');
+const { getSubtitles } = require('youtube-captions-scraper');
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const title = searchParams.get('title') || '';
+  const videoId = searchParams.get('videoId') || '';
 
-  if (!title) {
-    return NextResponse.json({ error: 'Missing title' }, { status: 400 });
+  if (!videoId) {
+    return NextResponse.json({ error: 'Missing videoId' }, { status: 400 });
   }
 
   try {
-    // Attempt to split title if it's "Artist - Song" or similar
-    let artist = '';
-    let song = title;
-    
-    if (title.includes(' - ')) {
-      [artist, song] = title.split(' - ');
-    }
+    const subtitles = await getSubtitles({
+      videoID: videoId,
+      lang: 'en'
+    });
 
-    const lyrics = await lyricsFinder(artist, song);
-    
-    if (!lyrics) {
-      return NextResponse.json({ lyrics: "INSTRUMENTAL / NO LYRICS FOUND" });
-    }
-
-    // Split lyrics into lines and remove empty ones
-    const lines = lyrics.split('\n').filter((l: string) => l.trim().length > 0);
-
+    // Subtitles come in format: { start: string, dur: string, text: string }
     return NextResponse.json({ 
-      lyrics: lines 
+      lyrics: subtitles.map((s: any) => ({
+        start: parseFloat(s.start),
+        dur: parseFloat(s.dur),
+        text: s.text.replace(/&amp;#39;/g, "'").replace(/&quot;/g, '"')
+      }))
     });
   } catch (error) {
-    console.error('Lyrics Fetch Error:', error);
-    return NextResponse.json({ error: 'Failed to fetch lyrics' }, { status: 500 });
+    console.error('Caption Fetch Error:', error);
+    // Fallback to empty if captions are unavailable
+    return NextResponse.json({ lyrics: [] });
   }
 }
