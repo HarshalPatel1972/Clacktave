@@ -137,7 +137,7 @@ export default function KeyboardSynth() {
       if (!showLyrics || lyrics.length === 0 || !ytPlayer.current || !ytPlayer.current.getCurrentTime) return;
       
       const currentTime = ytPlayer.current.getCurrentTime();
-      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.5));
+      const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.8));
 
       ctx.save();
       ctx.textAlign = 'center';
@@ -146,24 +146,37 @@ export default function KeyboardSynth() {
       if (currentLineIndex === -1) {
           const nextIndex = lyrics.findIndex(line => line.start > currentTime);
           if (nextIndex !== -1) {
-              ctx.font = 'italic 20px Inter, sans-serif';
+              ctx.font = 'italic 24px Inter, sans-serif';
               ctx.fillStyle = 'white';
-              ctx.globalAlpha = 0.1 + intensity.current * 0.1;
-              ctx.fillText("COMING UP: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 100);
+              ctx.globalAlpha = 0.1 + intensity.current * 0.2;
+              ctx.fillText("READY: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
           }
       } else {
-          // Current Line - BRIGHTER AND ON TOP
-          ctx.font = 'bold 50px Inter, sans-serif';
-          ctx.letterSpacing = '5px';
-          ctx.globalAlpha = 0.4 + intensity.current * 0.6;
-          ctx.fillStyle = '#fff';
-          ctx.fillText(lyrics[currentLineIndex].text.toUpperCase(), width / 2, height / 2);
+          // GLOWING KINETIC LYRICS
+          const text = lyrics[currentLineIndex].text.toUpperCase();
+          const opacity = 0.6 + intensity.current * 0.4;
+          
+          ctx.font = 'bold 64px Inter, sans-serif';
+          ctx.letterSpacing = '8px';
 
-          // Neighbors
-          ctx.font = '25px Inter, sans-serif';
-          ctx.globalAlpha = 0.05 + intensity.current * 0.1;
-          if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 80);
-          if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 80);
+          // Chromatic Aberration Ghosting
+          if (intensity.current > 0.4) {
+              ctx.globalAlpha = opacity * 0.3;
+              ctx.fillStyle = '#ff0055';
+              ctx.fillText(text, width / 2 - 4, height / 2);
+              ctx.fillStyle = '#00f2ff';
+              ctx.fillText(text, width / 2 + 4, height / 2);
+          }
+
+          ctx.globalAlpha = opacity;
+          ctx.fillStyle = 'white';
+          ctx.fillText(text, width / 2, height / 2);
+
+          // Sub-lyrics
+          ctx.font = '28px Inter, sans-serif';
+          ctx.globalAlpha = 0.1;
+          if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 100);
+          if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 100);
       }
       
       ctx.restore();
@@ -197,8 +210,6 @@ export default function KeyboardSynth() {
     }
     
     drawGrid(ctx, canvas.width, canvas.height, isGlitch);
-    
-    // LAYER FIX: DRAW LYRICS AFTER GRID BUT BEFORE PARTICLES
     drawLyrics(ctx, canvas.width, canvas.height);
 
     ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
@@ -265,11 +276,19 @@ export default function KeyboardSynth() {
           if (data.videoId && ytPlayer.current) {
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
-              setActiveTrack({ title: data.title });
-              setLyrics([]);
               
+              // CLEAN TITLE FOR BETTER LYRIC MATCHING
+              const cleanTitle = data.title
+                  .replace(/\(Official.*?\)/gi, '')
+                  .replace(/\[Official.*?\]/gi, '')
+                  .replace(/- YouTube/gi, '')
+                  .trim();
+                  
+              setActiveTrack({ title: cleanTitle });
+              setLyrics([]);
               setLyricsLoading(true);
-              const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}`);
+              
+              const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}&title=${encodeURIComponent(cleanTitle)}`);
               const lyrData = await lyrRes.json();
               setLyrics(lyrData.lyrics || []);
               setLyricsLoading(false);
@@ -293,7 +312,7 @@ export default function KeyboardSynth() {
           <div className="fixed bottom-12 left-12 z-[500] font-mono">
               <div className="flex items-center gap-4 mb-2">
                 <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
-                    {lyricsLoading ? "SYNCHRONIZING LYRICS..." : lyrics.length > 0 ? "SYSTEM ACTIVE // NOW PLAYING" : "INSTRUMENTAL DETECTED"}
+                    {lyricsLoading ? "SYNCHRONIZING LYRICS..." : lyrics.length > 0 ? "SYSTEM ACTIVE // NOW PLAYING" : "NO SYNC DATA FOUND"}
                 </p>
                 <div className="flex gap-2">
                     <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
