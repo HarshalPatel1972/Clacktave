@@ -50,7 +50,6 @@ export default function KeyboardSynth() {
   const particlesRef = useRef<Particle[]>([]);
   const glyphsRef = useRef<Glyph[]>([]);
   const requestRef = useRef<number>(0);
-  const mouseDroneRef = useRef<{ osc: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null>(null);
   const mousePos = useRef({ x: -1000, y: -1000 });
   const screenShake = useRef(0);
   const gridWarp = useRef(0);
@@ -66,18 +65,16 @@ export default function KeyboardSynth() {
   const [isManuallyPlaying, setIsManuallyPlaying] = useState(false);
   const ytPlayer = useRef<any>(null);
 
-  const initMouseDrone = () => {
-    if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const ctx = audioCtxRef.current; if (ctx.state === 'suspended') ctx.resume();
-    const osc = ctx.createOscillator(); const gain = ctx.createGain(); const filter = ctx.createBiquadFilter();
-    osc.type = 'sine'; filter.type = 'lowpass'; gain.gain.setValueAtTime(0, ctx.currentTime);
-    osc.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
-    osc.start(); mouseDroneRef.current = { osc, gain, filter };
+  const initAudio = () => {
+    if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
   };
 
   const playChord = (charCode: number) => {
     if (activeTrack) return;
-    if (!audioCtxRef.current) initMouseDrone();
+    initAudio();
     const ctx = audioCtxRef.current!;
     chordStep.current++;
     const progIndex = Math.floor(chordStep.current / 8) % PROGRESSION.length;
@@ -212,15 +209,6 @@ export default function KeyboardSynth() {
     const handleKeyUp = (e: KeyboardEvent) => { activeKeys.current.delete(e.code); updatePlayback(); };
     const handleMouseMove = (e: MouseEvent) => {
       mousePos.current = { x: e.clientX, y: e.clientY };
-      if (!mouseDroneRef.current) initMouseDrone();
-      const drone = mouseDroneRef.current; const ctx = audioCtxRef.current;
-      if (!drone || !ctx) return;
-      const xRatio = e.clientX / window.innerWidth; const yRatio = e.clientY / window.innerHeight;
-      drone.osc.frequency.setTargetAtTime(110 + (xRatio * 440), ctx.currentTime, 0.1);
-      drone.filter.frequency.setTargetAtTime(400 + (yRatio * 2000), ctx.currentTime, 0.1);
-      drone.gain.gain.setTargetAtTime(0.06, ctx.currentTime, 0.05);
-      if ((drone as any)._timeout) clearTimeout((drone as any)._timeout);
-      (drone as any)._timeout = setTimeout(() => { if (audioCtxRef.current) drone.gain.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.3); }, 100);
     };
 
     window.addEventListener('resize', handleResize); window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); window.addEventListener('mousemove', handleMouseMove);
