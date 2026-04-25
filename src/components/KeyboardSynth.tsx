@@ -64,6 +64,7 @@ export default function KeyboardSynth() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [activeTrack, setActiveTrack] = useState<{title: string} | null>(null);
+  const [isManuallyPlaying, setIsManuallyPlaying] = useState(false);
   const ytPlayer = useRef<any>(null);
   const isYTServing = useRef(false);
 
@@ -196,7 +197,7 @@ export default function KeyboardSynth() {
     const handleResize = () => { if (canvasRef.current) { canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; } };
     const updatePlayback = () => {
         if (!ytPlayer.current || !ytPlayer.current.playVideo) return;
-        if (activeKeys.current.size > 0) {
+        if (activeKeys.current.size > 0 || isManuallyPlaying) {
             ytPlayer.current.playVideo();
             ytPlayer.current.setVolume(100);
         } else {
@@ -204,6 +205,11 @@ export default function KeyboardSynth() {
             ytPlayer.current.setVolume(0);
         }
     };
+
+    // Use effect to react to manual play changes
+    useEffect(() => {
+        updatePlayback();
+    }, [isManuallyPlaying]);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showSearch) return;
@@ -310,14 +316,22 @@ export default function KeyboardSynth() {
       )}
 
       {activeTrack && !showSearch && (
-          <div className="fixed bottom-12 left-12 z-[500] font-mono animate-pulse">
-              <p className="text-white/20 text-xs uppercase tracking-[0.3em] mb-2">SYSTEM ACTIVE // NOW PLAYING</p>
+          <div className="fixed bottom-12 left-12 z-[500] font-mono">
+              <div className="flex items-center gap-4 mb-2">
+                <p className="text-white/20 text-xs uppercase tracking-[0.3em]">SYSTEM ACTIVE // NOW PLAYING</p>
+                <button 
+                    onClick={() => setIsManuallyPlaying(!isManuallyPlaying)}
+                    className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase"
+                >
+                    {isManuallyPlaying ? "MANUAL: ON" : "MANUAL: OFF"}
+                </button>
+              </div>
               <h2 className="text-white text-xl uppercase tracking-tighter max-w-md">
                   {activeTrack.title}
               </h2>
               <div className="mt-4 flex gap-1">
                   {[...Array(4)].map((_, i) => (
-                      <div key={i} className="w-1 h-4 bg-white/40 animate-bounce" style={{ animationDelay: `${i * 0.1}s` }} />
+                      <div key={i} className="w-1 h-4 bg-white/40 animate-bounce" style={{ animationDelay: `${i * 0.1}s`, animationPlayState: (activeKeys.current.size > 0 || isManuallyPlaying) ? 'running' : 'paused' }} />
                   ))}
               </div>
           </div>
