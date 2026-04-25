@@ -63,6 +63,7 @@ export default function KeyboardSynth() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [activeTrack, setActiveTrack] = useState<{title: string} | null>(null);
   const ytPlayer = useRef<any>(null);
   const isYTServing = useRef(false);
 
@@ -76,6 +77,7 @@ export default function KeyboardSynth() {
   };
 
   const playChord = (charCode: number) => {
+    if (activeTrack) return; // Mute synth when a song is active
     if (!audioCtxRef.current) initMouseDrone();
     const ctx = audioCtxRef.current!;
     chordStep.current++;
@@ -271,6 +273,7 @@ export default function KeyboardSynth() {
           if (data.videoId && ytPlayer.current) {
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
+              setActiveTrack({ title: data.title });
           }
       } catch (err) {
           console.error("Search failed:", err);
@@ -287,23 +290,37 @@ export default function KeyboardSynth() {
       <div id="yt-player" className="hidden" />
       
       {showSearch && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-xl">
             <form onSubmit={handleSearch} className="w-full max-w-2xl px-8">
                 <input
                     autoFocus
                     disabled={isSearching}
                     type="text"
-                    placeholder={isSearching ? "FINDING YOUR TRACK..." : "ENTER SONG NAME AND PRESS ENTER..."}
-                    className="w-full bg-transparent border-b-2 border-white text-white text-3xl font-mono uppercase focus:outline-none placeholder:text-white/20 disabled:opacity-50"
+                    placeholder={isSearching ? "SEARCHING DATABASE..." : "TYPE SONG NAME..."}
+                    className="w-full bg-transparent border-b-2 border-white text-white text-5xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)}
                 />
-                <p className="mt-4 text-white/40 font-mono text-sm uppercase">
-                    {isSearching ? "SEARCHING..." : "ESC TO CANCEL • ENTER TO SEARCH"}
+                <p className="mt-6 text-white/30 font-mono text-sm tracking-widest uppercase">
+                    {isSearching ? "ESTABLISHING CONNECTION..." : "ESC TO DISMISS • ENTER TO INITIATE"}
                 </p>
             </form>
         </div>
+      )}
+
+      {activeTrack && !showSearch && (
+          <div className="fixed bottom-12 left-12 z-[500] font-mono animate-pulse">
+              <p className="text-white/20 text-xs uppercase tracking-[0.3em] mb-2">SYSTEM ACTIVE // NOW PLAYING</p>
+              <h2 className="text-white text-xl uppercase tracking-tighter max-w-md">
+                  {activeTrack.title}
+              </h2>
+              <div className="mt-4 flex gap-1">
+                  {[...Array(4)].map((_, i) => (
+                      <div key={i} className="w-1 h-4 bg-white/40 animate-bounce" style={{ animationDelay: `${i * 0.1}s` }} />
+                  ))}
+              </div>
+          </div>
       )}
     </>
   );
