@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const SCALE = [130.81, 146.83, 155.56, 174.61, 196.00, 207.65, 233.08, 261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16, 523.25];
-const PROGRESSION = [0, 5, 6, 4]; // i - VI - VII - v in C Minor
+const PROGRESSION = [0, 5, 6, 4];
 const COLORS_CALM = ['#ffffff', '#00f2ff', '#7000ff'];
 const COLORS_HOT = ['#ff0055', '#ffaa00', '#ff00ff'];
 
@@ -13,12 +13,9 @@ class Particle {
     this.x = x; this.y = y;
     const angle = Math.random() * Math.PI * 2;
     const speed = (Math.random() * 8 + 2) * (1 + intensity * 2);
-    this.vx = Math.cos(angle) * speed;
-    this.vy = Math.sin(angle) * speed;
-    this.size = Math.random() * 3 + 1;
-    this.color = color;
-    this.life = 1.0;
-    this.decay = (Math.random() * 0.02 + 0.01) * (0.5 + intensity);
+    this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+    this.size = Math.random() * 3 + 1; this.color = color;
+    this.life = 1.0; this.decay = (Math.random() * 0.02 + 0.01) * (0.5 + intensity);
   }
   update() { this.x += this.vx; this.y += this.vy; this.vx *= 0.96; this.vy *= 0.96; this.life -= this.decay; }
   draw(ctx: CanvasRenderingContext2D) {
@@ -60,6 +57,12 @@ export default function KeyboardSynth() {
   const keystrokes = useRef<number[]>([]);
   const intensity = useRef(0);
   const chordStep = useRef(0);
+  
+  // YouTube Logic
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const ytPlayer = useRef<any>(null);
+  const isYTServing = useRef(false);
 
   const initMouseDrone = () => {
     if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -76,7 +79,7 @@ export default function KeyboardSynth() {
     chordStep.current++;
     const progIndex = Math.floor(chordStep.current / 8) % PROGRESSION.length;
     const rootFreq = SCALE[PROGRESSION[progIndex]];
-    const intervals = [1, 1.2, 1.5, 1.8, 2.2]; // Minor 9th stack
+    const intervals = [1, 1.2, 1.5, 1.8, 2.2];
 
     intervals.forEach((interval, i) => {
       const osc = ctx.createOscillator();
@@ -165,12 +168,46 @@ export default function KeyboardSynth() {
 
     ctx.restore();
     intensity.current *= 0.992;
+
+    // YouTube Momentum Logic
+    if (ytPlayer.current && ytPlayer.current.getPlayerState) {
+        if (intensity.current > 0.05) {
+            if (ytPlayer.current.getPlayerState() !== 1) ytPlayer.current.playVideo();
+            ytPlayer.current.setVolume(Math.min(100, intensity.current * 200));
+        } else {
+            if (ytPlayer.current.getPlayerState() === 1) ytPlayer.current.pauseVideo();
+        }
+    }
+
     requestRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
+    // Load YouTube API
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+
+    (window as any).onYouTubeIframeAPIReady = () => {
+        ytPlayer.current = new (window as any).YT.Player('yt-player', {
+            height: '0',
+            width: '0',
+            videoId: 'dQw4w9WgXcQ', // Default demo
+            events: {
+                'onReady': (event: any) => event.target.setVolume(0)
+            }
+        });
+    };
+
     const handleResize = () => { if (canvasRef.current) { canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; } };
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (showSearch) return; // Allow typing in search bar
+      if (e.key === '/') {
+          e.preventDefault();
+          setShowSearch(true);
+          return;
+      }
       e.preventDefault(); if (e.repeat) return;
       const now = Date.now(); keystrokes.current.push(now);
       keystrokes.current = keystrokes.current.filter(t => now - t < 4000);
@@ -193,15 +230,56 @@ export default function KeyboardSynth() {
       if ((drone as any)._timeout) clearTimeout((drone as any)._timeout);
       (drone as any)._timeout = setTimeout(() => { if (audioCtxRef.current) drone.gain.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.3); }, 100);
     };
-    window.addEventListener('resize', handleResize); window.addEventListener('keydown', handleKeyDown); window.addEventListener('mousemove', handleMouseMove);
-    handleResize(); requestRef.current = requestAnimationFrame(animate);
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    handleResize();
+    requestRef.current = requestAnimationFrame(animate);
+
     return () => {
-      window.removeEventListener('resize', handleResize); window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousemove', handleMouseMove);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, []);
+  }, [showSearch]);
+
+  const handleSearch = (e: React.FormEvent) => {
+      e.preventDefault();
+      let videoId = searchQuery;
+      if (searchQuery.includes('v=')) videoId = searchQuery.split('v=')[1].split('&')[0];
+      else if (searchQuery.includes('youtu.be/')) videoId = searchQuery.split('youtu.be/')[1].split('?')[0];
+      
+      if (ytPlayer.current) {
+          ytPlayer.current.loadVideoById(videoId);
+          ytPlayer.current.pauseVideo();
+      }
+      setShowSearch(false);
+      setSearchQuery('');
+  };
 
   return (
-    <canvas ref={canvasRef} className="fixed inset-0 w-full h-full bg-black touch-none" style={{ cursor: 'auto' }} id="clacktave-canvas" />
+    <>
+      <canvas ref={canvasRef} className="fixed inset-0 w-full h-full bg-black touch-none" style={{ cursor: 'auto' }} id="clacktave-canvas" />
+      <div id="yt-player" className="hidden" />
+      
+      {showSearch && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md">
+            <form onSubmit={handleSearch} className="w-full max-w-2xl px-8">
+                <input
+                    autoFocus
+                    type="text"
+                    placeholder="PASTE YOUTUBE URL OR ID AND PRESS ENTER..."
+                    className="w-full bg-transparent border-b-2 border-white text-white text-3xl font-mono uppercase focus:outline-none placeholder:text-white/20"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)}
+                />
+                <p className="mt-4 text-white/40 font-mono text-sm uppercase">ESC TO CANCEL • ENTER TO LOAD</p>
+            </form>
+        </div>
+      )}
+    </>
   );
 }
