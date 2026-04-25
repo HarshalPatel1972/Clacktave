@@ -44,6 +44,31 @@ export default function KeyboardSynth() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const requestRef = useRef<number>(0);
+  const mouseDroneRef = useRef<{ osc: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null>(null);
+
+  const initMouseDrone = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = 'sine';
+    filter.type = 'lowpass';
+    
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    mouseDroneRef.current = { osc, gain, filter };
+  };
 
   const playNote = (frequency: number) => {
     if (!audioCtxRef.current) {
@@ -122,14 +147,30 @@ export default function KeyboardSynth() {
       }
     };
 
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!mouseDroneRef.current) initMouseDrone();
+      const drone = mouseDroneRef.current;
+      const ctx = audioCtxRef.current;
+      if (!drone || !ctx) return;
+
+      const xRatio = e.clientX / window.innerWidth;
+      const yRatio = e.clientY / window.innerHeight;
+
+      drone.osc.frequency.setTargetAtTime(110 + (xRatio * 440), ctx.currentTime, 0.1);
+      drone.gain.gain.setTargetAtTime(0.02 + (yRatio * 0.08), ctx.currentTime, 0.1);
+      drone.filter.frequency.setTargetAtTime(400 + (yRatio * 2000), ctx.currentTime, 0.1);
+    };
+
     window.addEventListener('resize', handleResize);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousemove', handleMouseMove);
     handleResize();
     requestRef.current = requestAnimationFrame(animate);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousemove', handleMouseMove);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
   }, []);
@@ -137,7 +178,7 @@ export default function KeyboardSynth() {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 w-full h-full bg-black cursor-none touch-none"
+      className="fixed inset-0 w-full h-full bg-black touch-none"
       id="clacktave-canvas"
     />
   );
