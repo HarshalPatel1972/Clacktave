@@ -65,6 +65,7 @@ export default function KeyboardSynth() {
   const [isManuallyPlaying, setIsManuallyPlaying] = useState(false);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [showLyrics, setShowLyrics] = useState(true);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
   const ytPlayer = useRef<any>(null);
 
   const initAudio = () => {
@@ -138,40 +139,31 @@ export default function KeyboardSynth() {
       const currentTime = ytPlayer.current.getCurrentTime();
       const currentLineIndex = lyrics.findIndex(line => currentTime >= line.start && currentTime <= (line.start + line.dur + 0.5));
 
-      if (currentLineIndex === -1) {
-          // If no active line, find the closest upcoming one
-          const nextIndex = lyrics.findIndex(line => line.start > currentTime);
-          if (nextIndex === -1) return;
-          
-          ctx.save();
-          ctx.font = 'italic 20px Inter, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillStyle = 'white';
-          ctx.globalAlpha = 0.1;
-          ctx.fillText("UPCOMING: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 100);
-          ctx.restore();
-          return;
-      }
-
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      // Current Line
-      ctx.font = 'bold 50px Inter, sans-serif';
-      ctx.letterSpacing = '5px';
-      ctx.globalAlpha = 0.2 + intensity.current * 0.6;
-      ctx.fillStyle = 'white';
-      ctx.fillText(lyrics[currentLineIndex].text.toUpperCase(), width / 2, height / 2);
+      if (currentLineIndex === -1) {
+          const nextIndex = lyrics.findIndex(line => line.start > currentTime);
+          if (nextIndex !== -1) {
+              ctx.font = 'italic 20px Inter, sans-serif';
+              ctx.fillStyle = 'white';
+              ctx.globalAlpha = 0.1 + intensity.current * 0.1;
+              ctx.fillText("COMING UP: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 100);
+          }
+      } else {
+          // Current Line - BRIGHTER AND ON TOP
+          ctx.font = 'bold 50px Inter, sans-serif';
+          ctx.letterSpacing = '5px';
+          ctx.globalAlpha = 0.4 + intensity.current * 0.6;
+          ctx.fillStyle = '#fff';
+          ctx.fillText(lyrics[currentLineIndex].text.toUpperCase(), width / 2, height / 2);
 
-      // Previous and Next Lines
-      ctx.font = '30px Inter, sans-serif';
-      ctx.globalAlpha = 0.05 + intensity.current * 0.1;
-      if (currentLineIndex > 0) {
-          ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 80);
-      }
-      if (currentLineIndex < lyrics.length - 1) {
-          ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 80);
+          // Neighbors
+          ctx.font = '25px Inter, sans-serif';
+          ctx.globalAlpha = 0.05 + intensity.current * 0.1;
+          if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 80);
+          if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 80);
       }
       
       ctx.restore();
@@ -204,8 +196,10 @@ export default function KeyboardSynth() {
       screenShake.current *= 0.85;
     }
     
-    drawLyrics(ctx, canvas.width, canvas.height);
     drawGrid(ctx, canvas.width, canvas.height, isGlitch);
+    
+    // LAYER FIX: DRAW LYRICS AFTER GRID BUT BEFORE PARTICLES
+    drawLyrics(ctx, canvas.width, canvas.height);
 
     ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
     for (let i = 0; i < particlesRef.current.length; i++) {
@@ -272,13 +266,15 @@ export default function KeyboardSynth() {
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
               setActiveTrack({ title: data.title });
+              setLyrics([]);
               
-              // Fetch Synced Captions
+              setLyricsLoading(true);
               const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}`);
               const lyrData = await lyrRes.json();
               setLyrics(lyrData.lyrics || []);
+              setLyricsLoading(false);
           }
-      } catch (err) { console.error("Search failed:", err); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
+      } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
   };
 
   return (
@@ -296,7 +292,9 @@ export default function KeyboardSynth() {
       {activeTrack && !showSearch && (
           <div className="fixed bottom-12 left-12 z-[500] font-mono">
               <div className="flex items-center gap-4 mb-2">
-                <p className="text-white/20 text-xs uppercase tracking-[0.3em]">SYSTEM ACTIVE // NOW PLAYING</p>
+                <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
+                    {lyricsLoading ? "SYNCHRONIZING LYRICS..." : lyrics.length > 0 ? "SYSTEM ACTIVE // NOW PLAYING" : "INSTRUMENTAL DETECTED"}
+                </p>
                 <div className="flex gap-2">
                     <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
                         {isManuallyPlaying ? "MANUAL: ON" : "MANUAL: OFF"}
