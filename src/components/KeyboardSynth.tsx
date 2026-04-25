@@ -157,8 +157,18 @@ export default function KeyboardSynth() {
       const yRatio = e.clientY / window.innerHeight;
 
       drone.osc.frequency.setTargetAtTime(110 + (xRatio * 440), ctx.currentTime, 0.1);
-      drone.gain.gain.setTargetAtTime(0.02 + (yRatio * 0.08), ctx.currentTime, 0.1);
       drone.filter.frequency.setTargetAtTime(400 + (yRatio * 2000), ctx.currentTime, 0.1);
+      
+      // Sustain while moving
+      drone.gain.gain.setTargetAtTime(0.06, ctx.currentTime, 0.05);
+
+      // Fade out when movement stops
+      if ((drone as any)._timeout) clearTimeout((drone as any)._timeout);
+      (drone as any)._timeout = setTimeout(() => {
+        if (audioCtxRef.current) {
+          drone.gain.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.3);
+        }
+      }, 100);
     };
 
     window.addEventListener('resize', handleResize);
