@@ -110,19 +110,31 @@ export default function KeyboardSynth() {
     mouseDroneRef.current = { osc, gain, filter };
   };
 
-  const playNote = (frequency: number) => {
+  const playChord = (frequency: number) => {
     if (!audioCtxRef.current) initMouseDrone();
     const ctx = audioCtxRef.current!;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = Math.random() > 0.7 ? 'sawtooth' : 'sine';
-    osc.frequency.setValueAtTime(frequency, ctx.currentTime);
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 2.0);
+    
+    // Generative Harmony: Minor 9th / Major 7th based on frequency
+    const isHigh = frequency > 300;
+    const intervals = isHigh ? [1, 1.25, 1.5, 1.875, 2.25] : [1, 1.2, 1.5, 1.75, 2.2];
+
+    intervals.forEach((interval, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = i === 0 ? 'sawtooth' : 'sine';
+      osc.frequency.setValueAtTime(frequency * interval, ctx.currentTime);
+      
+      // Dynamic velocity per harmonic
+      const volume = (0.1 / (i + 1)) * (1.0 - (i * 0.1));
+      gain.gain.setValueAtTime(volume, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.5);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 2.5);
+    });
   };
 
   const spawnVisuals = (char: string, keyCode: number) => {
@@ -204,7 +216,7 @@ export default function KeyboardSynth() {
       if (e.repeat) return;
       const charCode = e.key.toUpperCase().charCodeAt(0);
       if ((charCode >= 65 && charCode <= 90) || (charCode >= 48 && charCode <= 57)) {
-        playNote(SCALE[charCode % SCALE.length]);
+        playChord(SCALE[charCode % SCALE.length]);
         spawnVisuals(e.key.toUpperCase(), charCode);
       }
     };
