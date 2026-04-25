@@ -66,6 +66,8 @@ export default function KeyboardSynth() {
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [showLyrics, setShowLyrics] = useState(true);
   const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [countdown, setCountdown] = useState(10);
+  const [lyricSource, setLyricSource] = useState<string>('');
   const ytPlayer = useRef<any>(null);
 
   const initAudio = () => {
@@ -152,33 +154,19 @@ export default function KeyboardSynth() {
               ctx.fillText("READY: " + lyrics[nextIndex].text.toUpperCase(), width / 2, height / 2 + 150);
           }
       } else {
-          // GLOWING KINETIC LYRICS
           const text = lyrics[currentLineIndex].text.toUpperCase();
           const opacity = 0.6 + intensity.current * 0.4;
-          
           ctx.font = 'bold 64px Inter, sans-serif';
           ctx.letterSpacing = '8px';
-
-          // Chromatic Aberration Ghosting
           if (intensity.current > 0.4) {
-              ctx.globalAlpha = opacity * 0.3;
-              ctx.fillStyle = '#ff0055';
-              ctx.fillText(text, width / 2 - 4, height / 2);
-              ctx.fillStyle = '#00f2ff';
-              ctx.fillText(text, width / 2 + 4, height / 2);
+              ctx.globalAlpha = opacity * 0.3; ctx.fillStyle = '#ff0055'; ctx.fillText(text, width / 2 - 4, height / 2);
+              ctx.globalAlpha = opacity * 0.3; ctx.fillStyle = '#00f2ff'; ctx.fillText(text, width / 2 + 4, height / 2);
           }
-
-          ctx.globalAlpha = opacity;
-          ctx.fillStyle = 'white';
-          ctx.fillText(text, width / 2, height / 2);
-
-          // Sub-lyrics
-          ctx.font = '28px Inter, sans-serif';
-          ctx.globalAlpha = 0.1;
+          ctx.globalAlpha = opacity; ctx.fillStyle = 'white'; ctx.fillText(text, width / 2, height / 2);
+          ctx.font = '28px Inter, sans-serif'; ctx.globalAlpha = 0.1;
           if (currentLineIndex > 0) ctx.fillText(lyrics[currentLineIndex - 1].text.toUpperCase(), width / 2, height / 2 - 100);
           if (currentLineIndex < lyrics.length - 1) ctx.fillText(lyrics[currentLineIndex + 1].text.toUpperCase(), width / 2, height / 2 + 100);
       }
-      
       ctx.restore();
   };
 
@@ -197,6 +185,17 @@ export default function KeyboardSynth() {
     updatePlayback();
   }, [isManuallyPlaying, updatePlayback]);
 
+  // Countdown logic
+  useEffect(() => {
+      let timer: any;
+      if (isSearching && countdown > 0) {
+          timer = setInterval(() => setCountdown(prev => prev - 1), 1000);
+      } else if (!isSearching) {
+          setCountdown(10);
+      }
+      return () => clearInterval(timer);
+  }, [isSearching, countdown]);
+
   const animate = () => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d'); if (!ctx) return;
@@ -208,10 +207,8 @@ export default function KeyboardSynth() {
       ctx.translate((Math.random() - 0.5) * screenShake.current, (Math.random() - 0.5) * screenShake.current);
       screenShake.current *= 0.85;
     }
-    
     drawGrid(ctx, canvas.width, canvas.height, isGlitch);
     drawLyrics(ctx, canvas.width, canvas.height);
-
     ctx.strokeStyle = isGlitch ? 'rgba(0,0,0,0.2)' : (intensity.current > 0.4 ? 'rgba(255, 0, 85, 0.2)' : 'rgba(255, 255, 255, 0.1)');
     for (let i = 0; i < particlesRef.current.length; i++) {
       for (let j = i + 1; j < Math.min(i + 5, particlesRef.current.length); j++) {
@@ -269,28 +266,20 @@ export default function KeyboardSynth() {
 
   const handleSearch = async (e: React.FormEvent) => {
       e.preventDefault(); if (!searchQuery.trim()) return;
-      setIsSearching(true);
+      setIsSearching(true); setCountdown(10);
       try {
           const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
           const data = await res.json();
           if (data.videoId && ytPlayer.current) {
               ytPlayer.current.loadVideoById(data.videoId);
               ytPlayer.current.pauseVideo();
-              
-              // CLEAN TITLE FOR BETTER LYRIC MATCHING
-              const cleanTitle = data.title
-                  .replace(/\(Official.*?\)/gi, '')
-                  .replace(/\[Official.*?\]/gi, '')
-                  .replace(/- YouTube/gi, '')
-                  .trim();
-                  
+              const cleanTitle = data.title.replace(/\(Official.*?\)/gi, '').replace(/\[Official.*?\]/gi, '').replace(/- YouTube/gi, '').trim();
               setActiveTrack({ title: cleanTitle });
-              setLyrics([]);
-              setLyricsLoading(true);
-              
+              setLyrics([]); setLyricsLoading(true);
               const lyrRes = await fetch(`/api/lyrics?videoId=${data.videoId}&title=${encodeURIComponent(cleanTitle)}`);
               const lyrData = await lyrRes.json();
               setLyrics(lyrData.lyrics || []);
+              setLyricSource(lyrData.source || 'NONE');
               setLyricsLoading(false);
           }
       } catch (err) { console.error("Search failed:", err); setLyricsLoading(false); } finally { setIsSearching(false); setShowSearch(false); setSearchQuery(''); }
@@ -302,9 +291,11 @@ export default function KeyboardSynth() {
       <div id="yt-player" className="hidden" />
       {showSearch && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-xl">
-            <form onSubmit={handleSearch} className="w-full max-w-2xl px-8">
-                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "SEARCHING DATABASE..." : "TYPE SONG NAME..."} className="w-full bg-transparent border-b-2 border-white text-white text-5xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
-                <p className="mt-6 text-white/30 font-mono text-sm tracking-widest uppercase">{isSearching ? "ESTABLISHING CONNECTION..." : "ESC TO DISMISS • ENTER TO INITIATE"}</p>
+            <form onSubmit={handleSearch} className="w-full max-w-2xl px-8 text-center">
+                <input autoFocus disabled={isSearching} type="text" placeholder={isSearching ? "INFILTRATING DATABASE..." : "ENTER SONG NAME..."} className="w-full bg-transparent border-b-2 border-white text-white text-5xl font-mono uppercase focus:outline-none placeholder:text-white/10 disabled:opacity-50 text-center" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)} />
+                <p className="mt-8 text-white/30 font-mono text-sm tracking-[0.5em] uppercase">
+                    {isSearching ? `ESTABLISHING CONNECTION... ${countdown}S` : "ESC TO DISMISS • ENTER TO INITIATE"}
+                </p>
             </form>
         </div>
       )}
@@ -312,7 +303,7 @@ export default function KeyboardSynth() {
           <div className="fixed bottom-12 left-12 z-[500] font-mono">
               <div className="flex items-center gap-4 mb-2">
                 <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
-                    {lyricsLoading ? "SYNCHRONIZING LYRICS..." : lyrics.length > 0 ? "SYSTEM ACTIVE // NOW PLAYING" : "NO SYNC DATA FOUND"}
+                    {lyricsLoading ? "SYNCHRONIZING..." : lyrics.length > 0 ? `SYSTEM ACTIVE // SOURCE: ${lyricSource}` : "DATA ENCRYPTION DETECTED"}
                 </p>
                 <div className="flex gap-2">
                     <button onClick={() => setIsManuallyPlaying(!isManuallyPlaying)} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 border border-white/20 transition-colors uppercase">
