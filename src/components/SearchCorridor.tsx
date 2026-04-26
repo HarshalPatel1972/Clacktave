@@ -51,7 +51,7 @@ export default function SearchCorridor({ onSelect, onCancel }: SearchCorridorPro
   };
 
   return (
-    <div className="fixed inset-0 z-[900] flex flex-col items-center justify-center bg-black">
+    <div className="center-full bg-black flex-col">
       {/* Floating letters — the query rendered as large glyphs */}
       <div className="flex items-center justify-center min-h-[120px] mb-8">
         <AnimatePresence mode="popLayout">

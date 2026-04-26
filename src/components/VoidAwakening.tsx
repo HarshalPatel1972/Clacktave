@@ -9,15 +9,16 @@ interface VoidAwakeningProps {
 export default function VoidAwakening({ onAwaken }: VoidAwakeningProps) {
   return (
     <div
-      className="fixed inset-0 z-[900] flex items-center justify-center bg-black"
-      onKeyDown={(e) => { e.preventDefault(); onAwaken(); }}
+      className="center-full bg-black cursor-none"
+      onKeyDown={(e) => { onAwaken(); }}
+      onClick={onAwaken}
       tabIndex={0}
       autoFocus
     >
       {/* The Breathing Circle */}
-      <div className="flex flex-col items-center gap-6">
+      <div className="flex-center gap-6">
         <motion.div
-          className="w-6 h-6 rounded-full border border-white/15"
+          className="breathing-circle"
           animate={{ scale: [1.0, 1.4, 1.0] }}
           transition={{
             duration: 2.8,
