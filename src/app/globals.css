@@ -1,46 +1,147 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400..800&family=JetBrains+Mono:wght@400;700&family=Bebas+Neue&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --void: #000000;
+  --word-active: #FFFFFF;
+  --word-near: rgba(255,255,255,0.45);
+  --word-far: rgba(255,255,255,0.12);
+  --word-ghost: rgba(255,255,255,0.04);
+  --bass-pulse: #FF2D55;
+  --mid-warm: #FF9500;
+  --high-cold: #00E5FF;
+  --grid-line: rgba(0,229,255,0.08);
+  --grid-hot: rgba(0,229,255,0.6);
+  --spark-core: #FFFFFF;
+  --spark-outer: #00E5FF;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
 body {
-  background: #000000;
-  color: #ffffff;
-  font-family: 'Outfit', sans-serif;
+  background: var(--void);
+  color: var(--word-active);
+  font-family: 'Syne', sans-serif;
   overflow: hidden;
-  margin: 0;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* SHARP STUDIO GLASS */
-.studio-glass {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-  backdrop-filter: blur(20px);
+/* THE BREATHING CIRCLE — Screen 0 */
+@keyframes breathe {
+  0%, 100% { transform: scale(1.0); }
+  50% { transform: scale(1.4); }
 }
 
-.studio-btn {
-  transition: all 0.1s ease;
+@keyframes ring-expand {
+  from { transform: scale(1); opacity: 0.6; }
+  to { transform: scale(8); opacity: 0; }
 }
 
-.studio-btn:active {
-  transform: scale(0.95);
+@keyframes implode {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(0); opacity: 0; }
 }
 
-.studio-btn-active {
-  background-color: #ffffff;
-  color: #000000;
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+@keyframes letter-land {
+  0% { transform: translateY(-60px) scaleY(2.5); opacity: 0; }
+  60% { transform: translateY(4px) scaleY(0.9); opacity: 1; }
+  100% { transform: translateY(0) scaleY(1); opacity: 1; }
 }
 
-/* ZERO-LATENCY ENTRANCE */
-.snap-in {
-  animation: snap-in 0.15s cubic-bezier(0, 0, 0.2, 1) forwards;
+@keyframes letter-enter {
+  from { transform: translateY(40px) rotateX(-90deg) scale(0.5); opacity: 0; }
+  to { transform: translateY(0) rotateX(0deg) scale(1); opacity: 1; }
 }
 
-@keyframes snap-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes vignette-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* FILM GRAIN — subtle cinematic texture */
+.film-grain {
+  position: fixed;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 9999;
+  animation: grain-shift 0.15s steps(4) infinite;
+}
+
+@keyframes grain-shift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-2%, 1%); }
+  50% { transform: translate(1%, -2%); }
+  75% { transform: translate(-1%, 2%); }
+  100% { transform: translate(2%, -1%); }
+}
+
+/* SILENCE VIGNETTE */
+.silence-vignette {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.7) 100%);
+  pointer-events: none;
+  z-index: 800;
+}
+
+/* LYRIC RIVER CONTAINER */
+.lyric-river {
+  position: fixed;
+  inset: 0;
+  perspective: 800px;
+  perspective-origin: 50% 45%;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.lyric-word {
+  position: absolute;
+  font-family: 'Syne', sans-serif;
+  white-space: nowrap;
+  transform-style: preserve-3d;
+  will-change: transform, opacity, font-variation-settings;
+  transition: font-variation-settings 0.05s linear;
+}
+
+/* SEARCH PILL */
+.search-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.search-pill:hover,
+.search-pill.active {
+  border-color: var(--high-cold);
+  box-shadow: 0 0 20px rgba(0,229,255,0.4);
+  color: white;
+  transform: scale(1.05);
+}
+
+.search-pill .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--high-cold);
+  animation: pulse-soft 1.5s infinite;
 }
