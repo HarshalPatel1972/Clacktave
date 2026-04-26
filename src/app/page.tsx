@@ -7,9 +7,10 @@ import dynamic from 'next/dynamic';
 const VoidAwakening = dynamic(() => import('@/components/VoidAwakening'), { ssr: false });
 const SearchCorridor = dynamic(() => import('@/components/SearchCorridor'), { ssr: false });
 const IgnitionSequence = dynamic(() => import('@/components/IgnitionSequence'), { ssr: false });
+const AwakeningSequence = dynamic(() => import('@/components/AwakeningSequence'), { ssr: false });
 const Stage = dynamic(() => import('@/components/Stage'), { ssr: false });
 
-type AppScreen = 'void' | 'search' | 'ignition' | 'stage';
+type AppScreen = 'void' | 'awakening' | 'search' | 'ignition' | 'stage';
 
 interface TrackData {
   videoId: string;
@@ -26,6 +27,10 @@ export default function Home() {
   const [lyricsLoaded, setLyricsLoaded] = useState(false);
 
   const handleAwaken = useCallback(() => {
+    setScreen('awakening');
+  }, []);
+
+  const handleAwakeningComplete = useCallback(() => {
     setScreen('search');
   }, []);
 
@@ -83,6 +88,10 @@ export default function Home() {
     <main className="min-h-screen bg-black overflow-hidden">
       {screen === 'void' && (
         <VoidAwakening onAwaken={handleAwaken} />
+      )}
+
+      {screen === 'awakening' && (
+        <AwakeningSequence onComplete={handleAwakeningComplete} />
       )}
 
       {screen === 'search' && (

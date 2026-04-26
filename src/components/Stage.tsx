@@ -10,6 +10,9 @@ import { useYouTubePlayer } from '@/hooks/useYouTubePlayer';
 import { useAudioAnalyzer } from '@/hooks/useAudioAnalyzer';
 import { useLyricSync } from '@/hooks/useLyricSync';
 import LyricRiver from './LyricRiver';
+import KeystrokeConstel from './KeystrokeConstel';
+import BpmOrb from './BpmOrb';
+import StudioOverlay from './StudioOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface StageProps {
@@ -28,12 +31,16 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
   const chordSynth = useRef<ChordSynth | null>(null);
   const lastKeyTime = useRef(0);
   const keystrokeBoost = useRef(0);
+  const [lastKeyEvent, setLastKeyEvent] = useState<{ code: string; timestamp: number } | null>(null);
 
   const [isSilent, setIsSilent] = useState(false);
+  const [isHudOpen, setIsHudOpen] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [showLyrics, setShowLyrics] = useState(true);
+  const [volume, setVolume] = useState(70);
 
-  const { recordKeystroke, getVelocity } = useTypingVelocity();
+  const { recordKeystroke, getVelocity, getKeystrokeCount } = useTypingVelocity();
   const yt = useYouTubePlayer();
   const { pulseBass, update: updateBass, getBassEnergy } = useAudioAnalyzer();
   const { sync } = useLyricSync();
@@ -55,8 +62,20 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
   useEffect(() => {
     if (yt.ready && videoId) {
       yt.cueVideo(videoId);
+      // Initializing Grid Flash
+      pulseBass(0.8);
+      if (gridState.current) emitShockwave(gridState.current);
     }
-  }, [yt.ready, videoId]);
+  }, [yt.ready, videoId, pulseBass]);
+
+  // Dynamic Tab Title
+  useEffect(() => {
+    if (!title) return;
+    const syncState = sync(currentTimeMs, lines, allWords);
+    const word = syncState.currentWord?.text || "...";
+    document.title = isSilent ? `[PAUSED] ${title}` : `[${word}] - ${title}`;
+    return () => { document.title = "Clacktave"; };
+  }, [currentTimeMs, title, isSilent, sync, lines, allWords]);
 
   // Canvas setup
   useEffect(() => {
@@ -88,10 +107,21 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
   // Key handling
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.repeat) return;
-    if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); onExit?.(); return; }
+    if (e.key === 'Tab') { 
+      e.preventDefault(); 
+      setIsHudOpen(prev => !prev);
+      return; 
+    }
+    if (e.key === 'Escape') { 
+      if (isHudOpen) { setIsHudOpen(false); return; }
+      e.preventDefault(); 
+      onExit?.(); 
+      return; 
+    }
 
     e.preventDefault();
     lastKeyTime.current = Date.now();
+    setLastKeyEvent({ code: e.code, timestamp: Date.now() });
     recordKeystroke();
 
     // Resume from silence
@@ -113,7 +143,10 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
     const vel = getVelocity();
     const targetRate = 0.6 + (vel / 10) * 0.8;
     yt.setPlaybackRate(Math.round(targetRate * 10) / 10);
-    yt.setVolume(30 + (vel / 10) * 70);
+    
+    // Master volume + Velocity modulation
+    const modVolume = Math.min(100, volume + (vel * 3));
+    yt.setVolume(modVolume);
 
     // Chord synthesis
     chordSynth.current?.playNote();
@@ -154,7 +187,7 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
     };
   }, [handleKeyDown, handleKeyUp]);
 
-  // Mouse tracking for grid gravity
+  // Mouse tracking & Volume Scroll
   useEffect(() => {
     const handleMouse = (e: MouseEvent) => {
       if (gridState.current) {
@@ -162,8 +195,15 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
         gridState.current.mouseY = e.clientY;
       }
     };
+    const handleWheel = (e: WheelEvent) => {
+      setVolume(v => Math.max(0, Math.min(100, v - (e.deltaY / 10))));
+    };
     window.addEventListener('mousemove', handleMouse);
-    return () => window.removeEventListener('mousemove', handleMouse);
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener('mousemove', handleMouse);
+      window.removeEventListener('wheel', handleWheel);
+    };
   }, []);
 
   // Main render loop
@@ -180,6 +220,12 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
       // Update current time from YouTube
       const ytTime = yt.getCurrentTime() * 1000;
       setCurrentTimeMs(ytTime);
+
+      // End of song detection
+      const duration = yt.getDuration() * 1000;
+      if (duration > 0 && ytTime > duration - 2000 && !isFinished) {
+        setIsFinished(true);
+      }
 
       // Update systems
       updateBass();
@@ -241,6 +287,23 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
         />
       )}
 
+      {/* Analytics & HUD Layer (Phase 2) */}
+      <BpmOrb 
+        lastKeystroke={lastKeyEvent?.timestamp} 
+        intensity={keystrokeBoost.current} 
+      />
+      
+      <KeystrokeConstel lastEvent={lastKeyEvent} />
+      
+      <StudioOverlay 
+        isOpen={isHudOpen}
+        title={title}
+        artist="CLACKTAVE_PERFORMANCE"
+        velocity={getVelocity()}
+        kps={getVelocity()} // Using velocity as KPS for now
+        bassEnergy={getBassEnergy()}
+      />
+
       {/* Silence Vignette */}
       <AnimatePresence>
         {isSilent && (
@@ -266,6 +329,38 @@ export default function Stage({ videoId, title, lyrics: rawLyrics, onExit }: Sta
                 · · ·
               </motion.p>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* End-of-Song Performance Wrap */}
+      <AnimatePresence>
+        {isFinished && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center"
+          >
+             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '80px', color: 'white' }}>
+               PERFORMANCE_COMPLETE
+             </h2>
+             <div className="flex gap-20 mt-8">
+                <div className="text-center">
+                   <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '10px' }}>AVG_VELOCITY</p>
+                   <p style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '48px', color: 'var(--high-cold)' }}>{getVelocity().toFixed(1)}</p>
+                </div>
+                <div className="text-center">
+                   <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '10px' }}>TOTAL_KEYSTROKES</p>
+                   <p style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '48px', color: 'white' }}>{getKeystrokeCount()}</p>
+                </div>
+             </div>
+             <motion.button
+                onClick={onExit}
+                className="mt-20 px-12 py-4 border border-white/20 uppercase hover:bg-white hover:text-black transition-colors"
+                style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '14px' }}
+             >
+                return_to_void
+             </motion.button>
           </motion.div>
         )}
       </AnimatePresence>
